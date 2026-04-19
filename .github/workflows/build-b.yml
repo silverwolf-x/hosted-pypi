@@ -10,7 +10,8 @@ on:
 
 env:
   PACKAGE_NAME: b
-  CIBW_BUILD: "cp310-* cp311-* cp312-*"
+  # CPython 最新3个大版本，每年10月新版发布后滚动更新
+  CIBW_BUILD: "cp311-* cp312-* cp313-*"
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BUILD_VERBOSITY: 2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -32,12 +33,15 @@ jobs:
           sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" packages/b/pyproject.toml
           sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" packages/b/b/__init__.py
 
-      - uses: pypa/cibuildwheel@v3.2.1
+      - uses: pypa/cibuildwheel@v3
         with:
           package-dir: packages/b
           output-dir: wheelhouse
         env:
           CIBW_ARCHS_LINUX: x86_64
+          # 强制单 manylinux 标签，避免 auditwheel 生成多兼容性标签的长文件名
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+            auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -61,7 +65,7 @@ jobs:
               p = pathlib.Path(fpath)
               p.write_text(re.sub(pat, rep, p.read_text(), flags=re.M))
 
-      - uses: pypa/cibuildwheel@v3.2.1
+      - uses: pypa/cibuildwheel@v3
         with:
           package-dir: packages/b
           output-dir: wheelhouse
@@ -81,7 +85,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.x"
 
       - name: 设置版本号
         run: |

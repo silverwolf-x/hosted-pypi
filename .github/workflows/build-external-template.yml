@@ -22,7 +22,8 @@ on:
 
 env:
   PACKAGE_NAME: "mypackage"      # ← 改成你的包名
-  CIBW_BUILD: "cp310-* cp311-* cp312-*"
+  # CPython 最新3个大版本，每年10月新版发布后滚动更新
+  CIBW_BUILD: "cp311-* cp312-* cp313-*"
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BUILD_VERBOSITY: 2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -49,9 +50,12 @@ jobs:
       - name: 设置版本号
         run: sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" pyproject.toml
 
-      - uses: pypa/cibuildwheel@v3.2.1
+      - uses: pypa/cibuildwheel@v3
         env:
           CIBW_ARCHS_LINUX: x86_64
+          # 强制单 manylinux 标签，文件名干净
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+            auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
           # CIBW_ENVIRONMENT: MY_LIB_PATH="/usr/local/lib"
 
       - uses: actions/upload-artifact@v4
@@ -79,7 +83,7 @@ jobs:
           txt = re.sub(r'^version = ".*"', 'version = "${{ inputs.version }}"', txt, flags=re.M)
           p.write_text(txt)
 
-      - uses: pypa/cibuildwheel@v3.2.1
+      - uses: pypa/cibuildwheel@v3
         env:
           CIBW_ARCHS_WINDOWS: AMD64
           # CIBW_ENVIRONMENT_WINDOWS: "MY_LIB_PATH='C:\\mylib'"
