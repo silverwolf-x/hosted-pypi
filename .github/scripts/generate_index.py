@@ -267,8 +267,8 @@ def generate_landing_page(
     latest_versions: dict,
     repo: str,
     output_dir: Path,
-):
-    """Generate a modern dark-themed landing page for the private PyPI index."""
+) -> None:
+    """Generate a modern light-themed landing page for the private PyPI index."""
     repo_owner, repo_name = repo.split("/")
     base_url = f"https://{repo_owner}.github.io/{repo_name}"
     pip_index_url = f"{base_url}/simple/"
@@ -296,7 +296,7 @@ def generate_landing_page(
     rows = "\n".join(rows_html)
 
     # CSS uses {{ / }} to escape braces inside the f-string
-    content = f"""<!DOCTYPE html>
+    page = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -305,20 +305,20 @@ def generate_landing_page(
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
     :root {{
-      --bg:       #0d1117;
-      --surface:  #161b22;
-      --surface2: #21262d;
-      --border:   #30363d;
-      --text:     #e6edf3;
-      --muted:    #8b949e;
-      --accent:   #58a6ff;
-      --accent-h: #79b8ff;
-      --badge-bg: #1c2b3a;
-      --badge-bd: #1c4a7a;
-      --green:    #3fb950;
-      --r:        8px;
-      --font:     -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-      --mono:     "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      --bg:        #f8fafc;
+      --surface:   #ffffff;
+      --border:    #e2e8f0;
+      --text:      #0f172a;
+      --muted:     #64748b;
+      --accent:    #2563eb;
+      --accent-h:  #1d4ed8;
+      --badge-bg:  #eff6ff;
+      --badge-txt: #1d4ed8;
+      --green:     #16a34a;
+      --green-bg:  #f0fdf4;
+      --r:         8px;
+      --font:      -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+      --mono:      "SF Mono", Menlo, "Cascadia Code", Consolas, monospace;
     }}
     body {{
       background: var(--bg); color: var(--text);
@@ -328,23 +328,24 @@ def generate_landing_page(
     a {{ color: var(--accent); text-decoration: none; }}
     a:hover {{ color: var(--accent-h); text-decoration: underline; }}
 
-    .wrap {{ max-width: 860px; margin: 0 auto; padding: 36px 20px 64px; }}
+    .wrap {{ max-width: 860px; margin: 0 auto; padding: 48px 20px 72px; }}
 
     /* ── Header ─────────────────────────────── */
-    .hdr {{ margin-bottom: 30px; padding-bottom: 22px; border-bottom: 1px solid var(--border); }}
-    .hdr-top {{ display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }}
+    .hdr {{ margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }}
+    .hdr-top {{ display: flex; align-items: center; gap: 14px; margin-bottom: 8px; }}
     .icon {{
-      width: 38px; height: 38px; border-radius: 8px; font-size: 20px;
+      width: 40px; height: 40px; border-radius: 10px; font-size: 20px;
       display: flex; align-items: center; justify-content: center;
-      background: linear-gradient(135deg, #1c2b3a, #1a3a5c);
+      background: linear-gradient(135deg, #dbeafe, #eff6ff);
       border: 1px solid var(--border);
+      flex-shrink: 0;
     }}
-    h1 {{ font-size: 22px; font-weight: 600; }}
-    .sub {{ color: var(--muted); font-size: 13px; margin-bottom: 10px; }}
+    h1 {{ font-size: 22px; font-weight: 700; letter-spacing: -.3px; color: var(--text); }}
+    .sub {{ color: var(--muted); font-size: 13px; margin-bottom: 12px; }}
     .pill {{
       display: inline-flex; align-items: center; gap: 5px;
-      background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 20px; padding: 2px 11px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 3px 12px;
       font-size: 12px; color: var(--muted);
     }}
     .pill b {{ color: var(--text); }}
@@ -352,11 +353,12 @@ def generate_landing_page(
     /* ── Install card ───────────────────────── */
     .card {{
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 16px 18px; margin-bottom: 26px;
+      border-radius: var(--r); padding: 18px 20px; margin-bottom: 28px;
+      box-shadow: 0 1px 3px rgba(15,23,42,.04);
     }}
     .card-lbl {{
       font-size: 11px; font-weight: 600; letter-spacing: .08em;
-      text-transform: uppercase; color: var(--muted); margin-bottom: 9px;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 10px;
     }}
     .cmd-row {{
       display: flex; align-items: center; gap: 10px;
@@ -368,68 +370,90 @@ def generate_landing_page(
       color: var(--accent); word-break: break-all;
     }}
     .copy-btn {{
-      background: var(--surface2); border: 1px solid var(--border);
+      background: var(--surface); border: 1px solid var(--border);
       border-radius: 6px; color: var(--muted); cursor: pointer;
-      font-size: 12px; padding: 5px 13px; white-space: nowrap;
+      font-size: 12px; font-weight: 500; padding: 5px 14px; white-space: nowrap;
       font-family: var(--font);
       transition: background .15s, color .15s, border-color .15s;
     }}
-    .copy-btn:hover {{ background: var(--border); color: var(--text); }}
-    .copy-btn.ok {{ color: var(--green); border-color: var(--green); }}
-    .idx-url {{ margin-top: 8px; font-size: 12px; color: var(--muted); }}
-    .idx-url a {{ font-family: var(--mono); font-size: 12px; }}
+    .copy-btn:hover {{
+      background: var(--bg); color: var(--text); border-color: #cbd5e1;
+    }}
+    .copy-btn.ok {{
+      color: var(--green); border-color: #86efac; background: var(--green-bg);
+    }}
+    .idx-url {{ margin-top: 9px; font-size: 12px; color: var(--muted); }}
+    .idx-url a {{ font-family: var(--mono); font-size: 12px; color: var(--accent); }}
+    .idx-url a:hover {{ color: var(--accent-h); }}
 
     /* ── Search row ─────────────────────────── */
     .search-row {{
-      display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
     }}
     .search {{
       flex: 1; background: var(--surface); border: 1px solid var(--border);
       border-radius: 6px; color: var(--text); font-family: var(--font);
       font-size: 13px; padding: 8px 14px; outline: none;
-      transition: border-color .15s;
+      transition: border-color .15s, box-shadow .15s;
+      box-shadow: 0 1px 2px rgba(15,23,42,.04);
     }}
     .search::placeholder {{ color: var(--muted); }}
-    .search:focus {{ border-color: var(--accent); }}
+    .search:focus {{
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+    }}
     .cnt {{ font-size: 12px; color: var(--muted); white-space: nowrap; }}
 
     /* ── Package table ──────────────────────── */
-    .tbl {{
-      width: 100%; border-collapse: collapse;
+    .tbl-wrap {{
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--r); overflow: hidden;
+      box-shadow: 0 1px 3px rgba(15,23,42,.04);
     }}
-    .tbl thead tr {{ background: var(--surface2); border-bottom: 1px solid var(--border); }}
+    .tbl {{ width: 100%; border-collapse: collapse; }}
+    .tbl thead tr {{
+      background: var(--bg); border-bottom: 1px solid var(--border);
+    }}
     .tbl th {{
-      padding: 9px 16px; text-align: left;
+      padding: 10px 16px; text-align: left;
       font-size: 11px; font-weight: 600;
       letter-spacing: .06em; text-transform: uppercase; color: var(--muted);
     }}
     .tbl th:last-child {{ text-align: right; }}
-    .tbl tbody tr {{ border-bottom: 1px solid var(--border); transition: background .1s; }}
+    .tbl tbody tr {{
+      border-bottom: 1px solid var(--border);
+      transition: background .1s;
+    }}
     .tbl tbody tr:last-child {{ border-bottom: none; }}
-    .tbl tbody tr:hover {{ background: var(--surface2); }}
+    .tbl tbody tr:hover {{ background: #f8fafc; }}
     .tbl tbody tr.hidden {{ display: none; }}
-    .tbl td {{ padding: 9px 16px; vertical-align: middle; }}
-    .pkg-link {{ font-family: var(--mono); font-size: 13px; font-weight: 500; }}
+    .tbl td {{ padding: 10px 16px; vertical-align: middle; }}
+    .pkg-link {{
+      font-family: var(--mono); font-size: 13px; font-weight: 500;
+      color: var(--accent);
+    }}
+    .pkg-link:hover {{ color: var(--accent-h); }}
     .badge {{
       display: inline-block;
-      background: var(--badge-bg); color: var(--accent);
-      border: 1px solid var(--badge-bd);
+      background: var(--badge-bg); color: var(--badge-txt);
       border-radius: 20px; padding: 1px 9px;
-      font-size: 11px; font-family: var(--mono); white-space: nowrap;
+      font-size: 11px; font-family: var(--mono); font-weight: 500;
+      white-space: nowrap; letter-spacing: .01em;
     }}
     .file-count {{ color: var(--muted); font-size: 12px; text-align: right; }}
-    .no-match {{ text-align: center; padding: 32px 0; color: var(--muted); font-size: 13px; }}
+    .no-match {{
+      text-align: center; padding: 36px 0;
+      color: var(--muted); font-size: 13px;
+    }}
 
     /* ── Footer ─────────────────────────────── */
     .footer {{
-      margin-top: 36px; padding-top: 16px;
+      margin-top: 40px; padding-top: 18px;
       border-top: 1px solid var(--border);
       color: var(--muted); font-size: 12px; text-align: center;
     }}
     .footer a {{ color: var(--muted); }}
-    .footer a:hover {{ color: var(--accent); }}
+    .footer a:hover {{ color: var(--accent); text-decoration: underline; }}
   </style>
 </head>
 <body>
@@ -441,7 +465,7 @@ def generate_landing_page(
       <h1>{e_repo_name}</h1>
     </div>
     <p class="sub">Private Python Package Index &mdash; powered by GitHub Releases</p>
-    <span class="pill"><b>{pkg_count}</b> package{"s" if pkg_count != 1 else ""}</span>
+    <span class="pill"><b>{pkg_count}</b>&nbsp;package{"s" if pkg_count != 1 else ""}</span>
   </header>
 
   <div class="card">
@@ -450,7 +474,7 @@ def generate_landing_page(
       <code id="pip-cmd">{pip_cmd}</code>
       <button class="copy-btn" onclick="doCopy(this)">Copy</button>
     </div>
-    <p class="idx-url">Index URL: <a href="{e_pip_index}">{e_pip_index}</a></p>
+    <p class="idx-url">Index URL:&nbsp;<a href="{e_pip_index}">{e_pip_index}</a></p>
   </div>
 
   <div class="search-row">
@@ -461,21 +485,23 @@ def generate_landing_page(
     <span class="cnt" id="cnt">{pkg_count} package{"s" if pkg_count != 1 else ""}</span>
   </div>
 
-  <table class="tbl" id="tbl">
-    <thead>
-      <tr>
-        <th>Package</th>
-        <th>Latest</th>
-        <th>Files</th>
-      </tr>
-    </thead>
-    <tbody>
+  <div class="tbl-wrap">
+    <table class="tbl" id="tbl">
+      <thead>
+        <tr>
+          <th>Package</th>
+          <th>Latest</th>
+          <th>Files</th>
+        </tr>
+      </thead>
+      <tbody>
 {rows}
-      <tr id="no-match" class="hidden">
-        <td colspan="3"><div class="no-match">No packages match your search.</div></td>
-      </tr>
-    </tbody>
-  </table>
+        <tr id="no-match" class="hidden">
+          <td colspan="3"><div class="no-match">No packages match your search.</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 
   <footer class="footer">
     <a href="{e_base_url}/simple/">Simple Index (PEP&nbsp;503)</a>
@@ -517,7 +543,7 @@ def generate_landing_page(
 </html>"""
 
     with open(output_dir / "index.html", "w", encoding="utf-8") as f:
-        f.write(content)
+        f.write(page)
 
 
 def main():

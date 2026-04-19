@@ -9,7 +9,7 @@ name: "[模板] 外部构建包上传"
 # 使用方法：
 #   1. 复制本文件，改名为 build-<你的包名>.yml
 #   2. 修改 env.PACKAGE_NAME
-#   3. 在各 job 的 "=== 你的构建步骤 ===" 区域填入构建逻辑
+#   3. 在 build_wheels job 的 "=== 你的构建步骤 ===" 区域填入构建逻辑
 # ============================================================
 
 on:
@@ -26,7 +26,7 @@ env:
   CIBW_BUILD: "cp311-* cp312-* cp313-*"
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BUILD_VERBOSITY: 2
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
   contents: write
@@ -34,67 +34,66 @@ permissions:
   id-token: write
 
 jobs:
-  build_linux:
-    name: Build Linux x86_64 wheels
-    runs-on: ubuntu-latest
+  build_wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+    env:
+      CIBW_ARCHS_LINUX: x86_64
+      CIBW_ARCHS_WINDOWS: AMD64
+      # 强制单 manylinux 标签，文件名干净
+      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
+
     steps:
       - uses: actions/checkout@v5
 
       # === 你的构建步骤（Linux）===
-      # - name: 编译 C 库
+      # - name: 编译 C 库 (Linux)
+      #   if: runner.os == 'Linux'
       #   run: |
       #     wget https://example.com/mylib.tar.gz
       #     tar xf mylib.tar.gz && cd mylib
       #     ./configure --prefix=/usr/local && make install
 
-      - name: 设置版本号
+      # === 你的构建步骤（Windows）===
+      # - name: 编译 C 库 (Windows)
+      #   if: runner.os == 'Windows'
+      #   shell: cmd
+      #   run: .\build.cmd
+
+      - name: 设置版本号 (Linux)
+        if: runner.os == 'Linux'
         run: sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" pyproject.toml
 
-      - uses: pypa/cibuildwheel@v3
-        env:
-          CIBW_ARCHS_LINUX: x86_64
-          # 强制单 manylinux 标签，文件名干净
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-            auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
-          # CIBW_ENVIRONMENT: MY_LIB_PATH="/usr/local/lib"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ env.PACKAGE_NAME }}-linux
-          path: ./wheelhouse/*.whl
-
-  build_windows:
-    name: Build Windows AMD64 wheels
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      # === 你的构建步骤（Windows）===
-      # - name: 编译 C 库
-      #   run: .\build.cmd
-      #   shell: cmd
-
-      - name: 设置版本号
+      - name: 设置版本号 (Windows)
+        if: runner.os == 'Windows'
         shell: python
         run: |
-          import pathlib, re
-          p = pathlib.Path("pyproject.toml")
-          txt = p.read_text()
-          txt = re.sub(r'^version = ".*"', 'version = "${{ inputs.version }}"', txt, flags=re.M)
-          p.write_text(txt)
+          import re, pathlib
+          p = pathlib.Path('pyproject.toml')
+          p.write_text(re.sub(
+              r'^version = .*',
+              'version = "${{ inputs.version }}"',
+              p.read_text(encoding='utf-8'),
+              flags=re.MULTILINE,
+          ), encoding='utf-8')
 
       - uses: pypa/cibuildwheel@v3
-        env:
-          CIBW_ARCHS_WINDOWS: AMD64
-          # CIBW_ENVIRONMENT_WINDOWS: "MY_LIB_PATH='C:\\mylib'"
+        # CIBW_ENVIRONMENT: MY_LIB_PATH="/usr/local/lib"  # 取消注释并按需配置
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ env.PACKAGE_NAME }}-windows
-          path: ./wheelhouse/*.whl
+          name: wheels-${{ env.PACKAGE_NAME }}-${{ matrix.os }}
+          path: wheelhouse/*.whl
 
   release:
-    needs: [build_linux, build_windows]
+    needs: build_wheels
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -104,8 +103,7 @@ jobs:
           path: dist
 
       - name: 生成 SHA256 校验
-        run: |
-          cd dist && sha256sum *.whl > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum *.whl > SHA256SUMS && cat SHA256SUMS
 
       - uses: softprops/action-gh-release@v2
         with:

@@ -14,7 +14,7 @@ env:
   CIBW_BUILD: "cp311-* cp312-* cp313-*"
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BUILD_VERBOSITY: 2
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
   contents: write
@@ -22,63 +22,55 @@ permissions:
   id-token: write
 
 jobs:
-  build_linux:
-    name: Build Linux x86_64 wheels
-    runs-on: ubuntu-latest
+  build_wheels:
+    name: Build wheels (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+          - os: windows-latest
+    env:
+      CIBW_ARCHS_LINUX: x86_64
+      CIBW_ARCHS_WINDOWS: AMD64
+      # 强制单 manylinux 标签，文件名干净
+      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
+
     steps:
       - uses: actions/checkout@v5
 
-      - name: 设置版本号
+      - name: 设置版本号 (Linux)
+        if: runner.os == 'Linux'
         run: |
           sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" packages/b/pyproject.toml
-          sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" packages/b/b/__init__.py
 
-      - uses: pypa/cibuildwheel@v3
-        with:
-          package-dir: packages/b
-          output-dir: wheelhouse
-        env:
-          CIBW_ARCHS_LINUX: x86_64
-          # 强制单 manylinux 标签，避免 auditwheel 生成多兼容性标签的长文件名
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-            auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ env.PACKAGE_NAME }}-linux
-          path: ./wheelhouse/*.whl
-
-  build_windows:
-    name: Build Windows AMD64 wheels
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: 设置版本号
+      - name: 设置版本号 (Windows)
+        if: runner.os == 'Windows'
         shell: python
         run: |
-          import pathlib, re
-          for fpath, pat, rep in [
-              ("packages/b/pyproject.toml",   r'^version = ".*"',      'version = "${{ inputs.version }}"'),
-              ("packages/b/b/__init__.py",     r'^__version__ = ".*"',  '__version__ = "${{ inputs.version }}"'),
-          ]:
-              p = pathlib.Path(fpath)
-              p.write_text(re.sub(pat, rep, p.read_text(), flags=re.M))
+          import re, pathlib
+          p = pathlib.Path('packages/b/pyproject.toml')
+          p.write_text(re.sub(
+              r'^version = .*',
+              'version = "${{ inputs.version }}"',
+              p.read_text(encoding='utf-8'),
+              flags=re.MULTILINE,
+          ), encoding='utf-8')
 
       - uses: pypa/cibuildwheel@v3
         with:
           package-dir: packages/b
           output-dir: wheelhouse
-        env:
-          CIBW_ARCHS_WINDOWS: AMD64
 
       - uses: actions/upload-artifact@v4
         with:
-          name: wheels-${{ env.PACKAGE_NAME }}-windows
-          path: ./wheelhouse/*.whl
+          name: wheels-${{ env.PACKAGE_NAME }}-${{ matrix.os }}
+          path: wheelhouse/*.whl
 
   build_sdist:
-    name: Build source distribution
+    name: Build sdist
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -90,7 +82,6 @@ jobs:
       - name: 设置版本号
         run: |
           sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" packages/b/pyproject.toml
-          sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" packages/b/b/__init__.py
 
       - name: 构建 sdist
         run: |
@@ -103,7 +94,7 @@ jobs:
           path: dist/*.tar.gz
 
   release:
-    needs: [build_linux, build_windows, build_sdist]
+    needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -118,8 +109,7 @@ jobs:
           path: dist
 
       - name: 生成 SHA256 校验
-        run: |
-          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
+        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
       - uses: softprops/action-gh-release@v2
         with:

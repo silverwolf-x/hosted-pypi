@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # ── 1. GitHub Actions：每周更新所有 workflow 中的 action 大版本 ──────────
+  # 将全部 actions 更新合并到一个 PR，减少噪音
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # ── 2. pip（TA-Lib Python 包）：每周检查上游新版本 ──────────────────────
+  # 监视 .github/talib-requirements.txt 中的 ta-lib 版本；
+  # 有新版本时创建 PR，由 talib-auto-release.yml 自动触发构建和发布。
+  #
+  # 注意：CIBW_BUILD（Python 版本）由独立的 update-python-versions.yml 管理，
+  #       每年10月新 Python 发布后会自动开 PR 滚动更新。
+  - package-ecosystem: "pip"
+    directory: "/.github"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    allow:
+      - dependency-name: "ta-lib"
+    labels:
+      - "talib-update"
+    commit-message:
+      prefix: "chore(talib)"
