@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g., 1.0.0)"
+        description: "发布版本号 (例如 1.0.0)"
         required: true
         type: string
+
+env:
+  PACKAGE_NAME: a
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
@@ -15,57 +19,49 @@ permissions:
 
 jobs:
   build:
+    name: Build pure-Python wheel
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install build tools
-        run: pip install build
-
-      - name: Set version
+      - name: 设置版本号
         working-directory: packages/a
         run: |
           sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" pyproject.toml
           sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" a/__init__.py
 
-      - name: Build wheel and sdist
+      - name: 构建 wheel 和 sdist
         working-directory: packages/a
-        run: python -m build
+        run: |
+          pip install build
+          python -m build
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: dist-a
+          name: dist-${{ env.PACKAGE_NAME }}
           path: packages/a/dist/*
 
   release:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: dist-a
+          name: dist-${{ env.PACKAGE_NAME }}
           path: dist
 
-      - name: Generate checksums
+      - name: 生成 SHA256 校验
         run: |
-          cd dist
-          sha256sum *.whl *.tar.gz > SHA256SUMS
-          echo "=== SHA256SUMS ==="
-          cat SHA256SUMS
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: a-v${{ inputs.version }}
-          name: "a v${{ inputs.version }}"
-          body: "Release of package `a` version `${{ inputs.version }}`"
+          tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
+          name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
           files: |
             dist/*.whl
             dist/*.tar.gz
@@ -79,3 +75,4 @@ jobs:
       contents: read
       pages: write
       id-token: write
+

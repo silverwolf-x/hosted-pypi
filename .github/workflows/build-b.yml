@@ -4,9 +4,16 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g., 2.1.1)"
+        description: "发布版本号 (例如 2.1.1)"
         required: true
         type: string
+
+env:
+  PACKAGE_NAME: b
+  CIBW_BUILD: "cp310-* cp311-* cp312-*"
+  CIBW_SKIP: "*-musllinux_*"
+  CIBW_BUILD_VERBOSITY: 2
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: write
@@ -14,104 +21,106 @@ permissions:
   id-token: write
 
 jobs:
-  build-wheels:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set version
-        shell: python
-        run: |
-          import pathlib, re
-          p = pathlib.Path("packages/b/pyproject.toml")
-          txt = p.read_text()
-          txt = re.sub(r'^version = ".*"', 'version = "${{ inputs.version }}"', txt, flags=re.M)
-          p.write_text(txt)
-          init = pathlib.Path("packages/b/b/__init__.py")
-          itxt = init.read_text()
-          itxt = re.sub(r'^__version__ = ".*"', '__version__ = "${{ inputs.version }}"', itxt, flags=re.M)
-          init.write_text(itxt)
-
-      - name: Install cibuildwheel
-        run: pip install cibuildwheel==2.21.3
-
-      - name: Build wheels
-        run: cibuildwheel packages/b --output-dir wheelhouse
-        env:
-          CIBW_BUILD: "cp310-* cp311-* cp312-*"
-          CIBW_SKIP: "*-musllinux_*"
-
-      - name: Upload wheels
-        uses: actions/upload-artifact@v4
-        with:
-          name: wheels-b-${{ matrix.os }}
-          path: wheelhouse/*.whl
-
-  build-sdist:
+  build_linux:
+    name: Build Linux x86_64 wheels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set version
+      - name: 设置版本号
         run: |
           sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" packages/b/pyproject.toml
           sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" packages/b/b/__init__.py
 
-      - name: Install build tools
-        run: pip install build
-
-      - name: Build sdist
-        run: python -m build --sdist --outdir dist packages/b
-
-      - name: Upload sdist
-        uses: actions/upload-artifact@v4
+      - uses: pypa/cibuildwheel@v3.2.1
         with:
-          name: sdist-b
+          package-dir: packages/b
+          output-dir: wheelhouse
+        env:
+          CIBW_ARCHS_LINUX: x86_64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ env.PACKAGE_NAME }}-linux
+          path: ./wheelhouse/*.whl
+
+  build_windows:
+    name: Build Windows AMD64 wheels
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 设置版本号
+        shell: python
+        run: |
+          import pathlib, re
+          for fpath, pat, rep in [
+              ("packages/b/pyproject.toml",   r'^version = ".*"',      'version = "${{ inputs.version }}"'),
+              ("packages/b/b/__init__.py",     r'^__version__ = ".*"',  '__version__ = "${{ inputs.version }}"'),
+          ]:
+              p = pathlib.Path(fpath)
+              p.write_text(re.sub(pat, rep, p.read_text(), flags=re.M))
+
+      - uses: pypa/cibuildwheel@v3.2.1
+        with:
+          package-dir: packages/b
+          output-dir: wheelhouse
+        env:
+          CIBW_ARCHS_WINDOWS: AMD64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ env.PACKAGE_NAME }}-windows
+          path: ./wheelhouse/*.whl
+
+  build_sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 设置版本号
+        run: |
+          sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" packages/b/pyproject.toml
+          sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" packages/b/b/__init__.py
+
+      - name: 构建 sdist
+        run: |
+          pip install build
+          python -m build --sdist --outdir dist packages/b
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist-${{ env.PACKAGE_NAME }}
           path: dist/*.tar.gz
 
   release:
-    needs: [build-wheels, build-sdist]
+    needs: [build_linux, build_windows, build_sdist]
     runs-on: ubuntu-latest
     steps:
-      - name: Download wheel artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          pattern: wheels-b-*
+          pattern: wheels-${{ env.PACKAGE_NAME }}-*
           merge-multiple: true
           path: dist
 
-      - name: Download sdist artifact
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: sdist-b
+          name: sdist-${{ env.PACKAGE_NAME }}
           path: dist
 
-      - name: Generate checksums
+      - name: 生成 SHA256 校验
         run: |
-          cd dist
-          sha256sum * > SHA256SUMS
-          echo "=== SHA256SUMS ==="
-          cat SHA256SUMS
+          cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v2
         with:
-          tag_name: b-v${{ inputs.version }}
-          name: "b v${{ inputs.version }}"
-          body: "Release of package `b` version `${{ inputs.version }}`"
+          tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
+          name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
           files: |
             dist/*.whl
             dist/*.tar.gz
@@ -125,3 +134,4 @@ jobs:
       contents: read
       pages: write
       id-token: write
+

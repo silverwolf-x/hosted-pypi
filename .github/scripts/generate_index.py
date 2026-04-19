@@ -268,108 +268,27 @@ def generate_landing_page(
     repo: str,
     output_dir: Path,
 ):
-    """Generate a human-friendly landing page at /index.html."""
+    """Generate a minimal plain-HTML index page (vnpy / PyTorch simple style)."""
     repo_owner, repo_name = repo.split("/")
     base_url = f"https://{repo_owner}.github.io/{repo_name}"
 
-    # Build package card HTML fragments
-    cards_html = ""
-    for name in sorted(packages.keys()):
-        files = packages[name]
-        versions = sorted(set(f["version"] for f in files))
-        latest = latest_versions.get(name, versions[-1] if versions else "?")
-
-        # Collect unique platform tags from wheel filenames
-        architectures = set()
-        for f in files:
-            fname = f["filename"]
-            if fname.endswith(".whl"):
-                parts = fname[:-4].split("-")
-                if len(parts) >= 5:
-                    architectures.add(parts[-1])
-
-        arch_badges = "".join(
-            f'<span class="badge">{a}</span>' for a in sorted(architectures)
-        )
-        if not arch_badges:
-            arch_badges = '<span class="badge">any</span>'
-
-        cards_html += (
-            '<div class="card">'
-            f'<h3>\U0001f40d {name} <span class="version">v{latest}</span></h3>'
-            f'<div class="meta">{len(versions)} version(s) &middot; '
-            f'{len(files)} file(s)</div>'
-            f'<div style="margin-top:.5rem">{arch_badges}</div>'
-            "</div>\n"
-        )
-
-    page_html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>\U0001f4e6 {repo_name} \u2013 Private PyPI Index</title>
-    <style>
-        *{{margin:0;padding:0;box-sizing:border-box}}
-        body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-             background:#f5f5f5;color:#333}}
-        .container{{max-width:900px;margin:0 auto;padding:2rem 1rem}}
-        header{{text-align:center;margin-bottom:2rem}}
-        header h1{{font-size:2rem;margin-bottom:.5rem}}
-        header p{{color:#666}}
-        .install-box{{background:#1e1e1e;color:#d4d4d4;padding:1rem 1.5rem;
-            border-radius:8px;margin:1.5rem 0;
-            font-family:"Fira Code","Cascadia Code",monospace;font-size:.9rem;
-            overflow-x:auto}}
-        .install-box code{{color:#9cdcfe}}
-        .install-box .cmt{{color:#6a9955}}
-        h2{{margin:1.5rem 0 .5rem}}
-        .cards{{display:grid;gap:1rem}}
-        .card{{background:#fff;border:1px solid #e0e0e0;border-radius:8px;
-            padding:1.25rem;transition:box-shadow .2s}}
-        .card:hover{{box-shadow:0 2px 8px rgba(0,0,0,.1)}}
-        .card h3{{font-size:1.1rem;margin-bottom:.5rem}}
-        .version{{background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:4px;
-            font-size:.85rem;font-weight:600}}
-        .meta{{color:#888;font-size:.85rem;margin-top:.5rem}}
-        .badge{{display:inline-block;background:#f0f0f0;color:#555;padding:2px 6px;
-            border-radius:3px;font-size:.75rem;margin:2px;font-family:monospace}}
-        footer{{text-align:center;margin-top:3rem;color:#999;font-size:.85rem}}
-        a{{color:#1565c0;text-decoration:none}}
-        a:hover{{text-decoration:underline}}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>\U0001f4e6 {repo_name}</h1>
-            <p>Private PyPI repository hosted on GitHub Pages</p>
-        </header>
-
-        <div class="install-box">
-            <span class="cmt"># Install a package from this index</span><br>
-            <code>pip install &lt;package_name&gt; --extra-index-url {base_url}/simple/</code>
-        </div>
-
-        <h2>\U0001f4cb Packages ({len(packages)})</h2>
-        <div class="cards">
-{cards_html}        </div>
-
-        <footer>
-            <p>
-                <a href="simple/">\U0001f4c2 Simple Index (PEP 503)</a> &middot;
-                <a href="https://github.com/{repo}">\U0001f517 GitHub Repository</a>
-            </p>
-            <p style="margin-top:.5rem">
-                Powered by GitHub Pages &middot; Auto-generated from GitHub Releases
-            </p>
-        </footer>
-    </div>
-</body>
-</html>"""
-
     with open(output_dir / "index.html", "w", encoding="utf-8") as f:
-        f.write(page_html)
+        f.write("<!DOCTYPE html>\n<html>\n<head>\n")
+        f.write('  <meta charset="utf-8">\n')
+        f.write(f"  <title>{html.escape(repo_name)}</title>\n")
+        f.write("</head>\n<body>\n")
+        f.write(f"  <h1>{html.escape(repo_name)}</h1>\n")
+        f.write(
+            f"  <p><code>pip install PACKAGE"
+            f" --extra-index-url {html.escape(base_url)}/simple/</code></p>\n"
+        )
+        f.write("  <hr>\n")
+        for name in sorted(packages.keys()):
+            safe = html.escape(name)
+            latest = html.escape(latest_versions.get(name, ""))
+            suffix = f" ({latest})" if latest else ""
+            f.write(f'  <a href="simple/{safe}/">{safe}</a>{suffix}<br>\n')
+        f.write("</body>\n</html>\n")
 
 
 def main():
