@@ -51,7 +51,7 @@ jobs:
         auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       # === 你的构建步骤（Linux）===
       # - name: 编译 C 库 (Linux)
@@ -87,7 +87,7 @@ jobs:
       - uses: pypa/cibuildwheel@v3
         # CIBW_ENVIRONMENT: MY_LIB_PATH="/usr/local/lib"  # 取消注释并按需配置
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ env.PACKAGE_NAME }}-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -96,7 +96,7 @@ jobs:
     needs: build_wheels
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-${{ env.PACKAGE_NAME }}-*
           merge-multiple: true
@@ -105,7 +105,7 @@ jobs:
       - name: 生成 SHA256 校验
         run: cd dist && sha256sum *.whl > SHA256SUMS && cat SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
           name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"

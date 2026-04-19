@@ -39,7 +39,7 @@ jobs:
         auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: 设置版本号 (Linux)
         if: runner.os == 'Linux'
@@ -64,7 +64,7 @@ jobs:
           package-dir: packages/b
           output-dir: wheelhouse
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ env.PACKAGE_NAME }}-${{ matrix.os }}
           path: wheelhouse/*.whl
@@ -73,9 +73,9 @@ jobs:
     name: Build sdist
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
@@ -88,7 +88,7 @@ jobs:
           pip install build
           python -m build --sdist --outdir dist packages/b
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdist-${{ env.PACKAGE_NAME }}
           path: dist/*.tar.gz
@@ -97,13 +97,13 @@ jobs:
     needs: [build_wheels, build_sdist]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-${{ env.PACKAGE_NAME }}-*
           merge-multiple: true
           path: dist
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: sdist-${{ env.PACKAGE_NAME }}
           path: dist
@@ -111,7 +111,7 @@ jobs:
       - name: 生成 SHA256 校验
         run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
           name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
