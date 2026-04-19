@@ -24,7 +24,7 @@ jobs:
     outputs:
       talib_py_ver: ${{ steps.read.outputs.talib_py_ver }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Read version from requirements file
         id: read
         run: |
@@ -47,7 +47,7 @@ jobs:
           - os: windows-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Setup MSVC (Windows only)
         if: runner.os == 'Windows'
@@ -118,7 +118,7 @@ jobs:
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
             auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: wheels-talib-${{ matrix.os }}
           path: wheelhouse/
@@ -130,7 +130,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-talib-*
           merge-multiple: true
@@ -139,7 +139,7 @@ jobs:
       - name: Generate checksums
         run: cd dist && sha256sum *.whl > SHA256SUMS.txt && cat SHA256SUMS.txt
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: talib-v${{ needs.get_version.outputs.talib_py_ver }}
           name: "TA-Lib v${{ needs.get_version.outputs.talib_py_ver }}"
