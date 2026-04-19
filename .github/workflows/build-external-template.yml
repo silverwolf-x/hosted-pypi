@@ -1,0 +1,182 @@
+name: "[模板] 外部构建包上传
+
+# ============================================================
+# 外部包构建模板
+#
+# 适用场景：
+#   - 包的源码不在 packages/ 目录（例如构建第三方 C 库的 Python 绑定）
+#   - 构建过程依赖自定义脚本、vendored 依赖或复杂编译步骤
+#   - 类似 https://github.com/cgohlke/talib-build 的构建模式
+#
+# 使用方法：
+#   1. 复制本文件，改名为 build-<你的包名>.yml
+#   2. 修改 env.PACKAGE_NAME
+#   3. 在各 build_* job 的 "=== 你的构建步骤 ===" 区域填入自己的构建逻辑
+#   4. 删除不需要的平台 job（可以只保留一个）
+# ============================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "发布版本号 (例如 1.0.0)"
+        required: true
+        type: string
+
+env:
+  PACKAGE_NAME: "mypackage"   # ← 改成你的包名
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# ============================================================
+# 各平台构建 job —— 产物统一上传为 artifact
+# ============================================================
+
+jobs:
+  build-linux:
+    name: 构建 Linux wheels
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # === 你的构建步骤（Linux）===
+      # 示例：下载 C 库源码并编译
+      # - name: 下载并编译 C 库
+      #   run: |
+      #     wget https://example.com/mylib-1.0.tar.gz
+      #     tar xf mylib-1.0.tar.gz
+      #     cd mylib-1.0 && ./configure && make install
+      #
+      # 示例：或者直接用 apt 安装依赖
+      # - name: 安装依赖
+      #   run: sudo apt-get install -y libmylib-dev
+
+      - name: 设置版本号
+        run: |
+          # 如果你的 pyproject.toml 在根目录：
+          sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" pyproject.toml
+          # 如果有 __init__.py：
+          # sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" src/mypackage/__init__.py
+
+      - name: 用 cibuildwheel 构建
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_SKIP: "*-musllinux_*"
+          # CIBW_ENVIRONMENT: MY_LIB_PATH="/usr/local/lib"
+          # CIBW_BEFORE_BUILD: "pip install pybind11"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ env.PACKAGE_NAME }}-linux
+          path: ./wheelhouse/*.whl
+
+  build-windows:
+    name: 构建 Windows wheels
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # === 你的构建步骤（Windows）===
+      # 示例：运行自定义编译脚本
+      # - name: 编译 C 库
+      #   run: .\build.cmd
+      #   shell: cmd
+
+      - name: 设置版本号
+        shell: python
+        run: |
+          import pathlib, re
+          p = pathlib.Path("pyproject.toml")
+          txt = p.read_text()
+          txt = re.sub(r'^version = ".*"', 'version = "${{ inputs.version }}"', txt, flags=re.M)
+          p.write_text(txt)
+
+      - name: 用 cibuildwheel 构建
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_ARCHS_WINDOWS: "AMD64"
+          # CIBW_ENVIRONMENT_WINDOWS: "MY_LIB_PATH='C:\\mylib'"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ env.PACKAGE_NAME }}-windows
+          path: ./wheelhouse/*.whl
+
+  build-macos:
+    name: 构建 macOS wheels
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-13, macos-14]   # macos-13=x86_64, macos-14=arm64
+    steps:
+      - uses: actions/checkout@v4
+
+      # === 你的构建步骤（macOS）===
+      # - name: 安装依赖
+      #   run: brew install mylib
+
+      - name: 设置版本号
+        run: |
+          sed -i '' "s/^version = .*/version = \"${{ inputs.version }}\"/" pyproject.toml
+
+      - name: 用 cibuildwheel 构建
+        uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          # CIBW_ENVIRONMENT_MACOS: "MY_LIB_PATH='/usr/local/lib'"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ env.PACKAGE_NAME }}-${{ matrix.os }}
+          path: ./wheelhouse/*.whl
+
+  # ============================================================
+  # 发布 job —— 收集所有 artifact → 创建 Release → 更新索引
+  # ============================================================
+
+  release:
+    needs: [build-linux, build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载所有 wheel artifact
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-${{ env.PACKAGE_NAME }}-*
+          merge-multiple: true
+          path: dist
+
+      - name: 生成 SHA256 校验文件
+        run: |
+          cd dist
+          sha256sum *.whl > SHA256SUMS
+          echo "=== 构建产物 ==="
+          ls -lh
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+
+      - name: 创建 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
+          name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
+          body: |
+            自动构建版本 `${{ env.PACKAGE_NAME }}` v`${{ inputs.version }}`
+
+            包含平台：Linux x86_64 · Windows AMD64 · macOS x86_64 · macOS ARM64
+          files: |
+            dist/*.whl
+            dist/SHA256SUMS
+
+  update-index:
+    needs: release
+    uses: ./.github/workflows/update-index.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+.eggs/
+site/
+*.whl
+*.tar.gz
+wheelhouse/
+reference/

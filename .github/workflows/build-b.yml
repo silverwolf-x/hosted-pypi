@@ -1,0 +1,127 @@
+name: Build Package B
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 2.1.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-wheels:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-13, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set version
+        shell: python
+        run: |
+          import pathlib, re
+          p = pathlib.Path("packages/b/pyproject.toml")
+          txt = p.read_text()
+          txt = re.sub(r'^version = ".*"', 'version = "${{ inputs.version }}"', txt, flags=re.M)
+          p.write_text(txt)
+          init = pathlib.Path("packages/b/b/__init__.py")
+          itxt = init.read_text()
+          itxt = re.sub(r'^__version__ = ".*"', '__version__ = "${{ inputs.version }}"', itxt, flags=re.M)
+          init.write_text(itxt)
+
+      - name: Install cibuildwheel
+        run: pip install cibuildwheel==2.21.3
+
+      - name: Build wheels
+        run: cibuildwheel packages/b --output-dir wheelhouse
+        env:
+          CIBW_BUILD: "cp310-* cp311-* cp312-*"
+          CIBW_SKIP: "*-musllinux_*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-b-${{ matrix.os }}
+          path: wheelhouse/*.whl
+
+  build-sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set version
+        run: |
+          sed -i "s/^version = .*/version = \"${{ inputs.version }}\"/" packages/b/pyproject.toml
+          sed -i "s/^__version__ = .*/__version__ = \"${{ inputs.version }}\"/" packages/b/b/__init__.py
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build sdist
+        run: python -m build --sdist --outdir dist packages/b
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist-b
+          path: dist/*.tar.gz
+
+  release:
+    needs: [build-wheels, build-sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-b-*
+          merge-multiple: true
+          path: dist
+
+      - name: Download sdist artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist-b
+          path: dist
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          echo "=== SHA256SUMS ==="
+          cat SHA256SUMS
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: b-v${{ inputs.version }}
+          name: "b v${{ inputs.version }}"
+          body: "Release of package `b` version `${{ inputs.version }}`"
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS
+
+  update-index:
+    needs: release
+    uses: ./.github/workflows/update-index.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
