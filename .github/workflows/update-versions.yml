@@ -1,0 +1,112 @@
+name: Update Versions
+
+# 维护 .github/.env 中的三个版本变量（单一真相来源）：
+#   TALIB_PY_VER — ta-lib Python 包（PyPI）
+#   TALIB_C_VER  — TA-Lib C 库（GitHub Releases，Dependabot 不支持此类追踪）
+#   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
+# .env 更新并合并 PR 后，talib.yml 的 push 触发器（监控 .github/.env）自动重建 wheel。
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # 每周一 09:00 UTC
+  workflow_dispatch:        # 支持手动触发
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Fetch latest versions and update .env
+        id: update
+        shell: python
+        run: |
+          import json, os, re
+          from datetime import date
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          def fetch(url):
+              req = Request(url, headers={'User-Agent': 'update-versions/1.0'})
+              with urlopen(req) as r:
+                  return json.load(r)
+
+          # ── TALIB_PY_VER：PyPI ─────────────────────────────────────────────
+          latest_py = fetch('https://pypi.org/pypi/ta-lib/json')['info']['version']
+
+          # ── TALIB_C_VER：GitHub Releases ───────────────────────────────────
+          latest_c = fetch(
+              'https://api.github.com/repos/ta-lib/ta-lib/releases/latest'
+          )['tag_name'].lstrip('v')
+
+          # ── CIBW_BUILD：最新 3 个 CPython 稳定版本 ─────────────────────────
+          cycles = fetch('https://endoflife.date/api/python.json')
+          today = date.today().isoformat()
+          supported = []
+          for c in cycles:
+              cy = str(c.get('cycle', ''))
+              if not cy.startswith('3.'):
+                  continue
+              eol = c.get('eol', '')
+              if (isinstance(eol, bool) and eol) or (isinstance(eol, str) and eol <= today):
+                  continue
+              if re.search(r'[a-zA-Z]', str(c.get('latest', ''))):
+                  continue
+              try:
+                  supported.append((int(cy.split('.', 1)[1]), cy))
+              except (IndexError, ValueError):
+                  pass
+          supported.sort(key=lambda x: x[0], reverse=True)
+          top3 = sorted((cy for _, cy in supported[:3]), key=lambda cy: int(cy.split('.', 1)[1]))
+          assert len(top3) == 3, f'Expected 3 Python cycles, got {top3!r}'
+          cibw = ' '.join(f'cp{cy.replace(".", "")}-*' for cy in top3)
+
+          # ── 写入 .github/.env ──────────────────────────────────────────────
+          env_file = Path('.github/.env')
+          old = env_file.read_text(encoding='utf-8') if env_file.exists() else ''
+          new = f'TALIB_PY_VER={latest_py}\nTALIB_C_VER={latest_c}\nCIBW_BUILD={cibw}\n'
+          changed = new != old
+          if changed:
+              env_file.write_text(new, encoding='utf-8')
+
+          out = os.environ.get('GITHUB_OUTPUT', '')
+          if out:
+              with open(out, 'a') as f:
+                  f.write(f'py_ver={latest_py}\n')
+                  f.write(f'c_ver={latest_c}\n')
+                  f.write(f'cibw_build={cibw}\n')
+                  f.write(f'changed={"true" if changed else "false"}\n')
+
+          print(f'TALIB_PY_VER={latest_py}  TALIB_C_VER={latest_c}  CIBW_BUILD={cibw}  changed={str(changed).lower()}')
+
+      - name: Create Pull Request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/update-versions
+          commit-message: "chore: update .env — py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}"
+          title: "chore: update .env — ta-lib py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}"
+          body: |
+            ## 自动版本更新
+
+            该 PR 由 `.github/workflows/update-versions.yml` 自动生成，更新 `.github/.env`。
+
+            | 变量 | 新值 | 数据来源 |
+            |------|------|---------|
+            | `TALIB_PY_VER` | `${{ steps.update.outputs.py_ver }}` | https://pypi.org/project/ta-lib/ |
+            | `TALIB_C_VER`  | `${{ steps.update.outputs.c_ver }}` | https://github.com/ta-lib/ta-lib/releases |
+            | `CIBW_BUILD`   | `${{ steps.update.outputs.cibw_build }}` | https://endoflife.date/python |
+
+            合并后 `talib.yml` 的 push 触发器（监控 `.github/.env`）自动执行 wheel 重建与发布。
+          labels: version-update
+          delete-branch: true

@@ -1,6 +1,8 @@
 version: 2
 updates:
   # GitHub Actions：每周更新所有 workflow 中的 action 版本（含 pypa/cibuildwheel）
+  # TA-Lib 版本（TALIB_PY_VER / TALIB_C_VER）和 CIBW_BUILD 均由 update-versions.yml 管理，
+  # 统一写入 .github/.env，talib.yml 从 .env 加载——Dependabot 无法追踪 PyPI/GH Releases 并写入 env。
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -11,7 +13,3 @@ updates:
       github-actions:
         patterns:
           - "*"
-
-  # TA-Lib Python/C 版本由 .github/workflows/update-talib-versions.yml 每周检查并开 PR
-  # Python 构建目标（CIBW_BUILD）由 .github/workflows/update-python-versions.yml 每周更新
-  # 两者均直接修改 talib.yml 中的 env 变量，合并 PR 后 push 触发器自动构建发布

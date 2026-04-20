@@ -1,24 +1,24 @@
-name: Build TA-Lib Wheels
+﻿name: Build TA-Lib Wheels
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Trigger
-#   push          — 版本更新 PR（update-talib-versions / update-python-versions）
-#                   合并到 dev 修改本文件时自动触发
-#   workflow_dispatch — 手动触发
+# 版本来源：.github/.env（由 update-versions.yml 每周自动更新，支持手动 dispatch）
+#   TALIB_PY_VER — ta-lib Python 包版本（PyPI）
+#   TALIB_C_VER  — TA-Lib C 库版本（GitHub Releases）
+#   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
 # ──────────────────────────────────────────────────────────────────────────────
 on:
   push:
     branches: [dev]
     paths:
       - ".github/workflows/talib.yml"
+      - ".github/.env"          # .env 版本更新合并后自动触发 wheel 重建
   workflow_dispatch:
 
 env:
-  TALIB_PY_VER: "0.6.8"        # ← update-talib-versions.yml 每周检查 PyPI 并开 PR
-  TALIB_C_VER:  "0.6.4"        # ← update-talib-versions.yml 每周检查 GitHub Releases 并开 PR
-  CIBW_BUILD: "cp312-* cp313-* cp314-*"  # ← update-python-versions.yml 每周更新
+  # 版本变量由 .github/.env 在各 job 第一步加载，此处只保留静态 cibuildwheel 配置
   CIBW_BUILD_VERBOSITY: 2
   CIBW_SKIP: "*-musllinux_*"
+  CIBW_BEFORE_BUILD: "pip install -U setuptools Cython wheel meson-python ninja && pip install -U numpy"
   MSBUILDTREATHIGHERTOOLSVERSIONASCURRENT: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
@@ -34,9 +34,9 @@ jobs:
     runs-on: windows-latest
     env:
       CIBW_ARCHS_WINDOWS: AMD64
-      # $TALIB_C_VER / $GITHUB_WORKSPACE 是运行时 shell 变量，由 cibuildwheel 从宿主环境展开。
-      # 不可用 ${{ env.X }}：job-level env: 块不支持 env context（会报 Unrecognized named-value）。
-      # 使用绝对路径：package-dir: talib-py 改变了 cibuildwheel 内的工作目录，相对路径失效。
+      # $TALIB_C_VER 由 "Load .env" 步骤注入宿主环境；cibuildwheel 构建时从宿主 env 展开此变量。
+      # job-level env: 不支持 ${{ env.X }}（Unrecognized named-value），用运行时变量。
+      # 使用绝对路径：package-dir: talib-py 改变 cibuildwheel 内工作目录，相对路径失效。
       CIBW_ENVIRONMENT_WINDOWS: >-
         TA_LIBRARY_PATH="$GITHUB_WORKSPACE/ta-lib-$TALIB_C_VER/_build;$LIB"
         TA_INCLUDE_PATH="$GITHUB_WORKSPACE/ta-lib-$TALIB_C_VER/include;$INCLUDE"
@@ -44,43 +44,24 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.x"
+      - name: Load versions from .env
+        shell: bash
+        run: cat .github/.env >> "$GITHUB_ENV"
 
-      - name: Prepare TA-Lib Python source
-        shell: python
-        run: |
-          import json, os, shutil, tarfile, tempfile
-          from pathlib import Path
-          from urllib.request import urlopen, urlretrieve
-          ver = os.environ['TALIB_PY_VER']
-          with urlopen(f'https://pypi.org/pypi/ta-lib/{ver}/json') as r:
-              data = json.load(r)
-          sdist = next(u for u in data['urls'] if u['packagetype'] == 'sdist')
-          fname = sdist['url'].rsplit('/', 1)[1]
-          urlretrieve(sdist['url'], fname)
-          dest = Path('talib-py')
-          shutil.rmtree(dest, ignore_errors=True)
-          dest.mkdir()
-          with tempfile.TemporaryDirectory() as tmp:
-              with tarfile.open(fname) as tf:
-                  tf.extractall(tmp)
-              top = next(Path(tmp).iterdir())
-              src = top if top.is_dir() else Path(tmp)
-              for item in src.iterdir():
-                  (shutil.copytree if item.is_dir() else shutil.copy2)(item, dest / item.name)
-          # 修复 Cython warning: __POLARS_SERIES 在 class scope 触发 name-mangling 歧义
-          for f in dest.rglob('*.pxi'):
-              t = f.read_text(encoding='utf-8')
-              if '__POLARS_SERIES' in t:
-                  f.write_text(t.replace('__POLARS_SERIES', '_POLARS_SERIES'), encoding='utf-8')
-                  print(f'  patched {f}')
-          print(f'Prepared ta-lib {ver} -> talib-py/')
-
-      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Checkout ta-lib-python source
+        uses: actions/checkout@v6
         with:
-          arch: amd64
+          repository: TA-Lib/ta-lib-python
+          ref: v${{ env.TALIB_PY_VER }}
+          path: talib-py
+
+      - name: Patch Cython source
+        shell: bash
+        run: find talib-py -name '*.pxi' -exec sed -i 's/__POLARS_SERIES/_POLARS_SERIES/g' {} +
+
+      - uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
 
       - name: Build TA-Lib C library
         shell: cmd
@@ -96,58 +77,36 @@ jobs:
           name: wheels-talib-windows
           path: wheelhouse/*.whl
 
-  # ── 2. 构建 Linux x86_64 wheels ──────────────────────────────────────────
+  # ── 2. 构建 Linux x86_64 wheels ───────────────────────────────────────────
   build_linux:
     name: Linux x86_64
     runs-on: ubuntu-latest
-    env:
-      # CIBW_BEFORE_ALL 在容器内独立执行，不继承 CIBW_ENVIRONMENT 中的变量；
-      # 用 shell prefix 赋值传入 TALIB_C_VER（根因：TALIB_C_VER is required 报错）
-      # 同理不可用 ${{ env.X }}，改用运行时变量 $TALIB_C_VER
-      CIBW_BEFORE_ALL_LINUX: >-
-        TALIB_C_VER=$TALIB_C_VER
-        bash /project/.github/scripts/talib/build-ta-lib-linux.sh
-      CIBW_ENVIRONMENT_LINUX: >-
-        TA_LIBRARY_PATH="/usr/local/lib"
-        TA_INCLUDE_PATH="/usr/local/include"
-        PIP_NO_BUILD_ISOLATION=false
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.x"
+      - name: Load versions from .env
+        run: cat .github/.env >> "$GITHUB_ENV"
 
-      - name: Prepare TA-Lib Python source
-        shell: python
-        run: |
-          import json, os, shutil, tarfile, tempfile
-          from pathlib import Path
-          from urllib.request import urlopen, urlretrieve
-          ver = os.environ['TALIB_PY_VER']
-          with urlopen(f'https://pypi.org/pypi/ta-lib/{ver}/json') as r:
-              data = json.load(r)
-          sdist = next(u for u in data['urls'] if u['packagetype'] == 'sdist')
-          fname = sdist['url'].rsplit('/', 1)[1]
-          urlretrieve(sdist['url'], fname)
-          dest = Path('talib-py')
-          shutil.rmtree(dest, ignore_errors=True)
-          dest.mkdir()
-          with tempfile.TemporaryDirectory() as tmp:
-              with tarfile.open(fname) as tf:
-                  tf.extractall(tmp)
-              top = next(Path(tmp).iterdir())
-              src = top if top.is_dir() else Path(tmp)
-              for item in src.iterdir():
-                  (shutil.copytree if item.is_dir() else shutil.copy2)(item, dest / item.name)
-          for f in dest.rglob('*.pxi'):
-              t = f.read_text(encoding='utf-8')
-              if '__POLARS_SERIES' in t:
-                  f.write_text(t.replace('__POLARS_SERIES', '_POLARS_SERIES'), encoding='utf-8')
-                  print(f'  patched {f}')
-          print(f'Prepared ta-lib {ver} -> talib-py/')
+      - name: Checkout ta-lib-python source
+        uses: actions/checkout@v6
+        with:
+          repository: TA-Lib/ta-lib-python
+          ref: v${{ env.TALIB_PY_VER }}
+          path: talib-py
+
+      - name: Patch Cython source
+        run: find talib-py -name '*.pxi' -exec sed -i 's/__POLARS_SERIES/_POLARS_SERIES/g' {} +
 
       - uses: pypa/cibuildwheel@v3.4.1
+        env:
+          # step-level env: ${{ env.X }} 在步骤启动前展开为字面值。
+          # CIBW_BEFORE_ALL 在 manylinux 容器内执行，容器不继承宿主 env，$TALIB_C_VER 为空。
+          # 必须在此处用 ${{ env.TALIB_C_VER }} 展开为字面字符串后传入容器。
+          CIBW_BEFORE_ALL_LINUX: "TALIB_C_VER=${{ env.TALIB_C_VER }} bash /project/.github/scripts/talib/build-ta-lib-linux.sh"
+          CIBW_ENVIRONMENT_LINUX: >-
+            TA_LIBRARY_PATH="/usr/local/lib"
+            TA_INCLUDE_PATH="/usr/local/include"
+            PIP_NO_BUILD_ISOLATION=false
         with:
           package-dir: talib-py
           output-dir: wheelhouse
@@ -164,6 +123,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v6
+
+      - name: Load versions from .env
+        run: cat .github/.env >> "$GITHUB_ENV"
+
       - uses: actions/download-artifact@v8
         with:
           pattern: wheels-talib-*
