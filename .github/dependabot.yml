@@ -13,11 +13,15 @@ updates:
         patterns:
           - "*"
 
-  # ── 2. pip（TA-Lib Python 包）：每周检查上游新版本 ──────────────────────
-  # 监视 .github/talib-requirements.txt 中的 ta-lib 版本；
-  # 有新版本时创建 PR，合并后由 talib.yml 的 pull_request 触发器自动构建发布。
-  # CIBW_BUILD 在 talib.yml 的 get_version job 中实时从 endoflife.date 动态计算，
-  # 无需单独的更新 workflow。
+  # ── 2. pip（TA-Lib Python 包版本）：每周检查上游新版本 ───────────────────
+  # 监视 .github/talib-requirements.txt 中的 ta-lib 版本。
+  # 有新版本时创建 PR；合并后由 talib.yml 的 pull_request 触发器自动构建发布。
+  #
+  # TA-Lib C 库版本（talib-c-requirements.txt）由
+  # .github/workflows/update-talib-c-version.yml 每周检查 GitHub Releases 并开 PR。
+  #
+  # CIBW_BUILD（最新 3 个 CPython 版本）由
+  # .github/workflows/update-python-versions.yml 每周检查 endoflife.date 并开 PR。
   - package-ecosystem: "pip"
     directory: "/.github"
     schedule:

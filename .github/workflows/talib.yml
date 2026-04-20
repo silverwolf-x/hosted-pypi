@@ -1,14 +1,27 @@
 name: Build TA-Lib Wheels
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Trigger                                                                       
+#   workflow_dispatch  — 手动触发                                                
+#   pull_request       — Dependabot 更新 talib-requirements.txt（Python 版本）  
+#                        或 update-talib-c-version.yml PR 更新 talib-c-requirements.txt
+#                        （C 库版本）并合并后自动触发                            
+# ──────────────────────────────────────────────────────────────────────────────
 on:
   workflow_dispatch:
-  # Dependabot 更新 talib-requirements.txt 并合并 PR 后自动触发
   pull_request:
     types: [closed]
     paths:
       - ".github/talib-requirements.txt"
+      - ".github/talib-c-requirements.txt"
 
 env:
+  # ── Python 构建目标：最新 3 个 CPython 维护版本 ───────────────────────────
+  # 由 .github/workflows/update-python-versions.yml 每周自动滚动更新（开 PR）
+  CIBW_BUILD: "cp312-* cp313-* cp314-*"
+  CIBW_BUILD_VERBOSITY: 2
+  CIBW_SKIP: "*-musllinux_*"
+  MSBUILDTREATHIGHERTOOLSVERSIONASCURRENT: 1
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
@@ -17,66 +30,47 @@ permissions:
   id-token: write
 
 jobs:
-  # ── 1. 读取 Python 包版本 + 自动获取最新 C 库版本 + 动态计算 CIBW_BUILD ──────
-  get_version:
-    # 手动触发始终运行；PR 触发仅在 Dependabot PR 被合并时运行
+  # ── 1. 从版本文件中读取 Python 包版本与 C 库版本 ──────────────────────────
+  prepare:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.merged == true &&
-       startsWith(github.event.pull_request.head.ref, 'dependabot/'))
+      github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     outputs:
-      talib_py_ver: ${{ steps.resolve.outputs.talib_py_ver }}
-      talib_c_ver: ${{ steps.resolve.outputs.talib_c_ver }}
-      cibw_build: ${{ steps.resolve.outputs.cibw_build }}
+      talib_py_ver: ${{ steps.read.outputs.talib_py_ver }}
+      talib_c_ver: ${{ steps.read.outputs.talib_c_ver }}
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.x"
+      - name: Read versions from requirements files
+        id: read
+        run: |
+          PY_VER=$(grep -v '^\s*#' .github/talib-requirements.txt \
+            | grep -oP '(?<=ta-lib==)\S+' | head -1)
+          [ -z "$PY_VER" ] && echo "::error::Cannot read ta-lib Python version" && exit 1
+          echo "talib_py_ver=${PY_VER}" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve TA-Lib versions
-        id: resolve
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python .github/scripts/talib/resolve_versions.py
+          C_VER=$(grep -v '^\s*#' .github/talib-c-requirements.txt \
+            | grep -v '^$' | head -1 | tr -d '[:space:]')
+          [ -z "$C_VER" ] && echo "::error::Cannot read ta-lib C version" && exit 1
+          echo "talib_c_ver=${C_VER}" >> "$GITHUB_OUTPUT"
 
-  # ── 2. 构建 wheels（Linux manylinux_2_28_x86_64 + Windows AMD64）───────────
-  build:
-    needs: get_version
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+          echo "Python=${PY_VER}  C=${C_VER}"
+
+  # ── 2. 构建 Windows AMD64 wheels ──────────────────────────────────────────
+  build_windows:
+    needs: prepare
+    name: Windows AMD64
+    runs-on: windows-latest
     env:
-      TALIB_PY_VER: ${{ needs.get_version.outputs.talib_py_ver }}
-      TALIB_C_VER: ${{ needs.get_version.outputs.talib_c_ver }}
-      CIBW_BUILD: ${{ needs.get_version.outputs.cibw_build }}
-      CIBW_SKIP: "*-musllinux_*"
-      CIBW_BUILD_VERBOSITY: 2
-      CIBW_ARCHS_LINUX: x86_64
+      TALIB_PY_VER: ${{ needs.prepare.outputs.talib_py_ver }}
+      TALIB_C_VER: ${{ needs.prepare.outputs.talib_c_ver }}
       CIBW_ARCHS_WINDOWS: AMD64
-      CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
-      CIBW_BEFORE_ALL_LINUX: bash /project/.github/scripts/talib/build-ta-lib-linux.sh
-      CIBW_ENVIRONMENT_LINUX: >-
-        TALIB_C_VER="$TALIB_C_VER"
-        TA_LIBRARY_PATH="/usr/local/lib"
-        TA_INCLUDE_PATH="/usr/local/include"
-        PIP_NO_BUILD_ISOLATION=false
       CIBW_ENVIRONMENT_WINDOWS: >-
         TALIB_C_VER="$TALIB_C_VER"
         TA_LIBRARY_PATH="ta-lib-$TALIB_C_VER\\_build;$LIB"
         TA_INCLUDE_PATH="ta-lib-$TALIB_C_VER\\include;$INCLUDE"
         PIP_NO_BUILD_ISOLATION=false
-      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
-      MSBUILDTREATHIGHERTOOLSVERSIONASCURRENT: 1
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-          - os: windows-latest
-
     steps:
       - uses: actions/checkout@v6
 
@@ -85,38 +79,109 @@ jobs:
           python-version: "3.x"
 
       - name: Prepare TA-Lib Python source
-        run: python .github/scripts/talib/prepare_source.py
+        shell: python
+        run: |
+          import json, os, shutil, tarfile, tempfile
+          from pathlib import Path
+          from urllib.request import urlopen, urlretrieve
+          ver = os.environ['TALIB_PY_VER']
+          with urlopen(f'https://pypi.org/pypi/ta-lib/{ver}/json') as r:
+              data = json.load(r)
+          sdist = next(u for u in data['urls'] if u['packagetype'] == 'sdist')
+          fname = sdist['url'].rsplit('/', 1)[1]
+          urlretrieve(sdist['url'], fname)
+          dest = Path('talib-py')
+          shutil.rmtree(dest, ignore_errors=True)
+          dest.mkdir()
+          with tempfile.TemporaryDirectory() as tmp:
+              with tarfile.open(fname) as tf:
+                  tf.extractall(tmp)
+              top = next(Path(tmp).iterdir())
+              src = top if top.is_dir() else Path(tmp)
+              for item in src.iterdir():
+                  (shutil.copytree if item.is_dir() else shutil.copy2)(item, dest / item.name)
+          print(f'Prepared ta-lib {ver} -> talib-py/')
 
-      - name: Setup MSVC (Windows only)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: amd64
 
-      - name: Build TA-Lib C library (Windows)
-        if: runner.os == 'Windows'
+      - name: Build TA-Lib C library
         shell: cmd
         run: .github\scripts\talib\build-ta-lib-windows.cmd
 
-      - name: Build wheels
-        uses: pypa/cibuildwheel@v3.4.1
+      - uses: pypa/cibuildwheel@v3.4.1
         with:
           package-dir: talib-py
           output-dir: wheelhouse
-        env:
-          CIBW_BEFORE_ALL_LINUX: ${{ env.CIBW_BEFORE_ALL_LINUX }}
-          CIBW_ENVIRONMENT_LINUX: ${{ env.CIBW_ENVIRONMENT_LINUX }}
-          CIBW_ENVIRONMENT_WINDOWS: ${{ env.CIBW_ENVIRONMENT_WINDOWS }}
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: ${{ env.CIBW_REPAIR_WHEEL_COMMAND_LINUX }}
 
       - uses: actions/upload-artifact@v7
         with:
-          name: wheels-talib-${{ matrix.os }}
+          name: wheels-talib-windows
           path: wheelhouse/*.whl
 
-  # ── 3. 发布 GitHub Release ─────────────────────────────────────────────────
+  # ── 3. 构建 Linux manylinux_2_28 x86_64 wheels ────────────────────────────
+  build_linux:
+    needs: prepare
+    name: Linux x86_64 (manylinux_2_28)
+    runs-on: ubuntu-latest
+    env:
+      TALIB_PY_VER: ${{ needs.prepare.outputs.talib_py_ver }}
+      TALIB_C_VER: ${{ needs.prepare.outputs.talib_c_ver }}
+      CIBW_ARCHS_LINUX: x86_64
+      CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
+      CIBW_BEFORE_ALL_LINUX: bash /project/.github/scripts/talib/build-ta-lib-linux.sh
+      CIBW_ENVIRONMENT_LINUX: >-
+        TALIB_C_VER="$TALIB_C_VER"
+        TA_LIBRARY_PATH="/usr/local/lib"
+        TA_INCLUDE_PATH="/usr/local/include"
+        PIP_NO_BUILD_ISOLATION=false
+      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Prepare TA-Lib Python source
+        shell: python
+        run: |
+          import json, os, shutil, tarfile, tempfile
+          from pathlib import Path
+          from urllib.request import urlopen, urlretrieve
+          ver = os.environ['TALIB_PY_VER']
+          with urlopen(f'https://pypi.org/pypi/ta-lib/{ver}/json') as r:
+              data = json.load(r)
+          sdist = next(u for u in data['urls'] if u['packagetype'] == 'sdist')
+          fname = sdist['url'].rsplit('/', 1)[1]
+          urlretrieve(sdist['url'], fname)
+          dest = Path('talib-py')
+          shutil.rmtree(dest, ignore_errors=True)
+          dest.mkdir()
+          with tempfile.TemporaryDirectory() as tmp:
+              with tarfile.open(fname) as tf:
+                  tf.extractall(tmp)
+              top = next(Path(tmp).iterdir())
+              src = top if top.is_dir() else Path(tmp)
+              for item in src.iterdir():
+                  (shutil.copytree if item.is_dir() else shutil.copy2)(item, dest / item.name)
+          print(f'Prepared ta-lib {ver} -> talib-py/')
+
+      - uses: pypa/cibuildwheel@v3.4.1
+        with:
+          package-dir: talib-py
+          output-dir: wheelhouse
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheels-talib-linux
+          path: wheelhouse/*.whl
+
+  # ── 4. 发布 GitHub Release ─────────────────────────────────────────────────
   release:
-    needs: [get_version, build]
+    needs: [prepare, build_windows, build_linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -132,13 +197,13 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: talib-v${{ needs.get_version.outputs.talib_py_ver }}
-          name: "TA-Lib v${{ needs.get_version.outputs.talib_py_ver }}"
+          tag_name: talib-v${{ needs.prepare.outputs.talib_py_ver }}
+          name: "TA-Lib v${{ needs.prepare.outputs.talib_py_ver }}"
           files: |
             dist/*.whl
             dist/SHA256SUMS.txt
 
-  # ── 4. 更新 PyPI 静态索引 ──────────────────────────────────────────────────
+  # ── 5. 更新 PyPI 静态索引 ──────────────────────────────────────────────────
   update-index:
     needs: release
     uses: ./.github/workflows/update-index.yml
@@ -147,4 +212,3 @@ jobs:
       contents: read
       pages: write
       id-token: write
-  

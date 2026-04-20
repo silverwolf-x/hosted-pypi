@@ -1,0 +1,85 @@
+name: Update TA-Lib Python Versions
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-python-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Update CIBW_BUILD in talib workflow
+        id: update
+        shell: python
+        run: |
+          import json, os, re
+          from datetime import date
+          from pathlib import Path
+          from urllib.request import urlopen
+          with urlopen('https://endoflife.date/api/python.json') as r:
+              cycles = json.load(r)
+          today = date.today().isoformat()
+          supported = []
+          for c in cycles:
+              cy = str(c.get('cycle', ''))
+              if not cy.startswith('3.'):
+                  continue
+              eol = c.get('eol', '')
+              if (isinstance(eol, bool) and eol) or (isinstance(eol, str) and eol <= today):
+                  continue
+              if re.search(r'[a-zA-Z]', str(c.get('latest', ''))):
+                  continue
+              try:
+                  supported.append((int(cy.split('.', 1)[1]), cy))
+              except (IndexError, ValueError):
+                  pass
+          supported.sort(key=lambda x: x[0], reverse=True)
+          top3 = sorted((cy for _, cy in supported[:3]), key=lambda cy: int(cy.split('.', 1)[1]))
+          assert len(top3) == 3, f'Expected 3 Python cycles, got {top3!r}'
+          cibw = ' '.join(f'cp{cy.replace(".", "")}-*' for cy in top3)
+          wf = Path('.github/workflows/talib.yml')
+          text = wf.read_text(encoding='utf-8')
+          pat = re.compile(r'(CIBW_BUILD:\s*["\'])([^"\']+)(["\'])')
+          m = pat.search(text)
+          changed = bool(m and m.group(2) != cibw)
+          if changed:
+              wf.write_text(pat.sub(rf'\g<1>{cibw}\g<3>', text, count=1), encoding='utf-8')
+          out = os.environ.get('GITHUB_OUTPUT', '')
+          if out:
+              with open(out, 'a') as f:
+                  f.write(f'cibw_build={cibw}\n')
+                  f.write(f'changed={"true" if changed else "false"}\n')
+          print(f'CIBW_BUILD={cibw}  changed={str(changed).lower()}')
+
+      - name: Create Pull Request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/update-talib-python-versions
+          commit-message: "chore: update talib CIBW_BUILD to ${{ steps.update.outputs.cibw_build }}"
+          title: "chore: update talib CIBW_BUILD to latest 3 Python versions"
+          body: |
+            ## 自动 Python 版本更新
+
+            该 PR 由 .github/workflows/update-python-versions.yml 自动生成。
+
+            新的 CIBW_BUILD:
+            ${{ steps.update.outputs.cibw_build }}
+
+            数据来源: https://endoflife.date/python
+          labels: python-version-update
+          delete-branch: true
