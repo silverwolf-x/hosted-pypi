@@ -113,35 +113,7 @@ def get_all_releases(repo: str, token: str = None) -> list:
     return releases
 
 
-def download_asset_text(url: str, token: str = None) -> str:
-    """Download text content from a GitHub API asset URL."""
-    headers = {
-        "Accept": "application/octet-stream",
-        "User-Agent": "pypi-index-generator",
-    }
-    if token:
-        headers["Authorization"] = f"token {token}"
-
-    req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
-        return response.read().decode("utf-8")
-
-
-def parse_checksums_file(content: str) -> dict:
-    """Parse SHA256SUMS file into {filename: hash} dict."""
-    checksums = {}
-    for line in content.strip().split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split(None, 1)
-        if len(parts) == 2:
-            hash_val, fname = parts
-            checksums[fname.lstrip("*").strip()] = hash_val
-    return checksums
-
-
-def collect_packages(releases: list, token: str = None) -> tuple:
+def collect_packages(releases: list) -> tuple:
     """
     Scan releases and collect all package files.
 
@@ -160,25 +132,6 @@ def collect_packages(releases: list, token: str = None) -> tuple:
 
         tag = release.get("tag_name", "")
         assets = release.get("assets", [])
-
-        # Look for checksums file in release assets
-        checksums = {}
-        for asset in assets:
-            if asset["name"].lower() in (
-                "sha256sums",
-                "checksums.txt",
-                "sha256sums.txt",
-            ):
-                try:
-                    content = download_asset_text(asset["url"], token)
-                    checksums = parse_checksums_file(content)
-                    print(f"  [{tag}] Loaded {len(checksums)} checksums")
-                except Exception as e:
-                    print(
-                        f"  [{tag}] Warning: checksums read failed: {e}",
-                        file=sys.stderr,
-                    )
-                break
 
         # Process each asset
         for asset in assets:
@@ -208,7 +161,6 @@ def collect_packages(releases: list, token: str = None) -> tuple:
                 {
                     "filename": filename,
                     "url": asset["browser_download_url"],
-                    "sha256": checksums.get(filename, ""),
                     "version": version,
                 }
             )
@@ -254,8 +206,6 @@ def generate_simple_index(packages: dict, output_dir: Path):
             f.write(f"  <h1>Links for {html.escape(name)}</h1>\n")
             for fi in sorted(files, key=lambda x: x["filename"]):
                 href = fi["url"]
-                if fi.get("sha256"):
-                    href += f"#sha256={fi['sha256']}"
                 safe_fn = html.escape(fi["filename"])
                 safe_href = html.escape(href, quote=True)
                 f.write(f'  <a href="{safe_href}">{safe_fn}</a><br>\n')
@@ -570,7 +520,7 @@ def main():
     releases = get_all_releases(repo, token)
     print(f"Found {len(releases)} release(s)")
 
-    packages, latest_versions = collect_packages(releases, token)
+    packages, latest_versions = collect_packages(releases)
     print(f"Indexed {len(packages)} package(s)")
 
     output_dir.mkdir(parents=True, exist_ok=True)

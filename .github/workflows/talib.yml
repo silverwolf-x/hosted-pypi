@@ -138,16 +138,13 @@ jobs:
           merge-multiple: true
           path: dist/
 
-      - name: Generate checksums
-        run: cd dist && sha256sum *.whl > SHA256SUMS.txt && cat SHA256SUMS.txt
-
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: talib-v${{ env.TALIB_PY_VER }}
           name: "TA-Lib v${{ env.TALIB_PY_VER }}"
+          overwrite_files: true
           files: |
             dist/*.whl
-            dist/SHA256SUMS.txt
 
   # ── 4. 更新 PyPI 静态索引 ──────────────────────────────────────────────────
   update-index:

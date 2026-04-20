@@ -9,7 +9,7 @@
 - **PEP 503 标准兼容** — 用标准 `pip install --extra-index-url` 安装
 - **自动更新索引** — 每次发布后自动重新生成索引
 - **多架构支持** — 编译包通过 `cibuildwheel` 覆盖 Linux / macOS / Windows
-- **SHA256 校验** — 下载链接内嵌哈希，保证完整性
+- **覆盖发布** — 同 tag 重跑会覆盖同名 Release 资产
 - **零基础设施** — 不需要服务器、不需要 Docker，只用 GitHub
 
 ---
@@ -50,7 +50,6 @@ extra-index-url = https://<你的用户名>.github.io/<仓库名>/simple/
 │          generate_index.py                                       │
 │          ├─ 通过 GitHub API 扫描所有 Release                      │
 │          ├─ 解析 .whl 文件名（包名、版本、平台标签）               │
-│          ├─ 读取 Release 中的 SHA256SUMS                          │
 │          └─ 生成静态 HTML                                         │
 │                      │                                           │
 │              部署到 GitHub Pages                                  │
@@ -113,7 +112,7 @@ https://<你的用户名>.github.io/<仓库名>/
 工作流会自动：
 - 构建 wheel 包
 - 创建 GitHub Release，tag 为 `a-v1.0.0`
-- 将 `.whl`、`.tar.gz`、`SHA256SUMS` 附加到 Release
+- 将 `.whl`、`.tar.gz` 上传到 Release 资产，同 tag 重跑会覆盖同名文件
 - 重新生成 PyPI 索引
 - 部署到 GitHub Pages
 
@@ -143,7 +142,7 @@ packages/
   b/                                      # 示例：C 扩展包源码
 ```
 
-> **packages/ 目录不是必须的。** 它只是示例。你完全可以在另一个仓库里构建包，只要最终把 wheel 附加到这个仓库的 Release 即可。
+> **packages/ 目录不是必须的。** 它只是示例。你完全可以在另一个仓库里构建包，只要最终把 wheel 上传到这个仓库的 Release 资产即可。
 
 ---
 
@@ -194,7 +193,7 @@ requires-python = ">=3.9"
 
 **核心思路**：构建流程完全自定义，只需要最终产物满足：
 1. wheels 存在于 `./wheelhouse/` 或 `./dist/`
-2. 创建 GitHub Release 并附加 wheels
+2. 创建 GitHub Release 并上传 wheels 资产
 3. 调用 `update-index.yml`
 
 **使用 `build-external-template.yml`：**
@@ -241,7 +240,7 @@ steps:
 1. **获取所有 Release**（分页处理，支持超过 100 个）
 2. **跳过草稿**——只有已发布的 Release 才会被索引
 3. **解析 wheel 文件名**——按 [PEP 427](https://peps.python.org/pep-0427/) 提取包名、版本、平台标签
-4. **读取 SHA256SUMS**——若 Release 附带校验文件，则在索引链接中嵌入 hash
+4. **生成下载链接**——直接使用 Release 资产地址生成索引
 5. **生成静态 HTML**：
    - `/simple/index.html` — 所有包的根索引
    - `/simple/<包名>/index.html` — 每个包的下载链接列表
