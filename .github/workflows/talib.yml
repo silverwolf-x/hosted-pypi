@@ -5,6 +5,7 @@
 #   TALIB_PY_VER — ta-lib Python 包版本（PyPI）
 #   TALIB_C_VER  — TA-Lib C 库版本（GitHub Releases）
 #   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
+#   CIBW_MANYLINUX_X86_64_IMAGE — manylinux x86_64 镜像版本（pypa/manylinux）
 # ──────────────────────────────────────────────────────────────────────────────
 on:
   push:
@@ -103,7 +104,8 @@ jobs:
           # CIBW_BEFORE_ALL 在 manylinux 容器内执行，容器不继承宿主 env，$TALIB_C_VER 为空。
           # 必须在此处用 ${{ env.TALIB_C_VER }} 展开为字面字符串后传入容器。
           CIBW_ARCHS_LINUX: auto64
-          CIBW_MANYLINUX_X86_64_IMAGE: 
+          CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.CIBW_MANYLINUX_X86_64_IMAGE }}
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --only-plat -w {dest_dir} {wheel}"
           CIBW_BEFORE_ALL_LINUX: "TALIB_C_VER=${{ env.TALIB_C_VER }} bash /project/.github/scripts/talib/build-ta-lib-linux.sh"
           CIBW_ENVIRONMENT_LINUX: >-
             TA_LIBRARY_PATH="/usr/local/lib"
