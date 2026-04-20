@@ -5,12 +5,10 @@ on:
   workflow_call:
 
 env:
-  TALIB_C_VER: "0.6.4"
   # CPython 最新3个大版本，每年10月新版发布后滚动更新
   CIBW_BUILD: "cp311-* cp312-* cp313-*"
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BUILD_VERBOSITY: 2
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
   contents: write
@@ -18,19 +16,39 @@ permissions:
   id-token: write
 
 jobs:
-  # ── 1. 读取 TA-Lib Python 版本（由 Dependabot 维护）────────────────────────
+  # ── 1. 读取 Python 包版本（Dependabot 维护）+ 自动获取最新 C 库版本 ─────────
   get_version:
     runs-on: ubuntu-latest
     outputs:
       talib_py_ver: ${{ steps.read.outputs.talib_py_ver }}
+      talib_c_ver: ${{ steps.read.outputs.talib_c_ver }}
     steps:
       - uses: actions/checkout@v6
-      - name: Read version from requirements file
+      - name: Read Python version and fetch latest C library version
         id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VER=$(grep -oP '(?<=ta-lib==)\S+' .github/talib-requirements.txt)
-          echo "talib_py_ver=${VER}" >> "$GITHUB_OUTPUT"
-          echo "Building ta-lib-python v${VER}"
+          # 过滤注释行后提取版本号（避免注释中的示例版本干扰）
+          PY_VER=$(grep -v '^\s*#' .github/talib-requirements.txt \
+            | grep -oP '(?<=ta-lib==)\S+' | head -1)
+          if [ -z "$PY_VER" ]; then
+            echo "::error::无法从 talib-requirements.txt 读取版本号" && exit 1
+          fi
+          echo "talib_py_ver=${PY_VER}" >> "$GITHUB_OUTPUT"
+          echo "TA-Lib Python version: ${PY_VER}"
+
+          # 从 GitHub API 获取 TA-Lib C 库最新发布版本
+          C_VER=$(curl -fsSL \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/TA-Lib/ta-lib/releases/latest" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          if [ -z "$C_VER" ]; then
+            echo "::error::无法从 GitHub API 获取 TA-Lib C 库版本" && exit 1
+          fi
+          echo "talib_c_ver=${C_VER}" >> "$GITHUB_OUTPUT"
+          echo "TA-Lib C library version: ${C_VER}"
 
   # ── 2. 构建 wheels（Linux manylinux_2_28_x86_64 + Windows AMD64）───────────
   build:
@@ -39,6 +57,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       TALIB_PY_VER: ${{ needs.get_version.outputs.talib_py_ver }}
+      TALIB_C_VER: ${{ needs.get_version.outputs.talib_c_ver }}
     strategy:
       fail-fast: false
       matrix:

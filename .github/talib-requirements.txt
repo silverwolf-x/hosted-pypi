@@ -1,5 +1,4 @@
-# TA-Lib Python 版本由 Dependabot 自动更新
-# 文件格式：ta-lib==X.Y.Z
-# 当检测到上游新版本时，Dependabot 会更新此文件并创建 PR。
-# PR 合并后，talib-auto-release.yml 会自动触发构建和发布。
+# TA-Lib Python 版本由 Dependabot 自动更新，请勿手动修改版本号
+# 当检测到上游新版本时，Dependabot 会更新此文件并创建 PR
+# PR 合并后，talib-auto-release.yml 会自动触发构建和发布
 ta-lib==0.6.8
