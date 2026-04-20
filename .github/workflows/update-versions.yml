@@ -5,7 +5,9 @@ name: Update Versions
 #   TALIB_C_VER  — TA-Lib C 库（GitHub Releases，Dependabot 不支持此类追踪）
 #   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
 #   CIBW_MANYLINUX_X86_64_IMAGE — manylinux x86_64 镜像（pypa/manylinux）
-# `GITHUB_TOKEN` 在部分仓库策略下无法创建 PR；此工作流固定使用 `UPDATE_VERSIONS_TOKEN` 作为治本方案。
+# create-pull-request 是治本方案：默认使用 GITHUB_TOKEN 创建/更新 PR。
+# 如果仓库关闭了 “Allow GitHub Actions to create and approve pull requests”，
+# 需要在仓库设置开启；`UPDATE_VERSIONS_TOKEN` 仅作为可选 override。
 on:
   schedule:
     - cron: "0 9 * * 1"   # 每周一 09:00 UTC
@@ -18,12 +20,8 @@ permissions:
 jobs:
   update-versions:
     runs-on: ubuntu-latest
-    env:
-      UPDATE_VERSIONS_TOKEN: ${{ secrets.UPDATE_VERSIONS_TOKEN }}
     steps:
       - uses: actions/checkout@v6
-        with:
-          token: ${{ secrets.UPDATE_VERSIONS_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v6
         with:
@@ -130,18 +128,14 @@ jobs:
               % (latest_py, latest_c, cibw, manylinux_x86_64_image, str(changed).lower())
           )
 
-      - name: Validate PR token
-        if: steps.update.outputs.changed == 'true' && env.UPDATE_VERSIONS_TOKEN == ''
-        shell: bash
-        run: |
-          echo "::error::Missing UPDATE_VERSIONS_TOKEN secret. This repository forbids pull request creation with GITHUB_TOKEN, so configure a PAT or GitHub App token with contents:write and pull-requests:write permissions."
-          exit 1
-
       - name: Create Pull Request
+        id: cpr
         if: steps.update.outputs.changed == 'true'
+        continue-on-error: true
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ env.UPDATE_VERSIONS_TOKEN }}
+          token: ${{ secrets.UPDATE_VERSIONS_TOKEN || github.token }}
+          add-paths: .github/.env
           base: ${{ github.event.repository.default_branch }}
           branch: chore/update-versions
           commit-message: "chore: update .env — py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
@@ -161,3 +155,15 @@ jobs:
             合并后 `talib.yml` 的 push 触发器（监控 `.github/.env`）自动执行 wheel 重建与发布。
           labels: version-update
           delete-branch: true
+
+      - name: Validate PR creation
+        if: steps.update.outputs.changed == 'true' && steps.cpr.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error::create-pull-request failed. By default this workflow uses GITHUB_TOKEN. Enable 'Allow GitHub Actions to create and approve pull requests' in Settings > Actions > General, or configure UPDATE_VERSIONS_TOKEN as an optional PAT / GitHub App override with contents:write and pull-requests:write permissions."
+          exit 1
+
+      - name: Show PR result
+        if: steps.update.outputs.changed == 'true' && steps.cpr.outputs.pull-request-url != ''
+        run: |
+          echo "PR: ${{ steps.cpr.outputs.pull-request-url }}"

@@ -10,7 +10,6 @@ on:
 
 env:
   PACKAGE_NAME: a
-  RELEASE_TAG: a
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
@@ -111,55 +110,36 @@ jobs:
       - name: 删除旧 Release 与 Tag
         uses: actions/github-script@v9
         env:
-          PACKAGE_NAME: ${{ env.PACKAGE_NAME }}
-          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          RELEASE_TAG: ${{ format('{0}-v{1}', env.PACKAGE_NAME, inputs.version) }}
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const packageName = process.env.PACKAGE_NAME;
-            const stableTag = process.env.RELEASE_TAG;
+            const tag = process.env.RELEASE_TAG;
 
-            function shouldDelete(tag) {
-              return tag === stableTag || tag === `${packageName}-latest` || tag.startsWith(`${packageName}-v`);
-            }
-
-            const releases = await github.paginate(github.rest.repos.listReleases, {
-              owner,
-              repo,
-              per_page: 100,
-            });
-
-            for (const release of releases) {
-              const tag = release.tag_name;
-              if (!shouldDelete(tag)) {
-                continue;
-              }
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
               await github.rest.repos.deleteRelease({ owner, repo, release_id: release.id });
               core.info(`Deleted release for ${tag}`);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.info(`No existing release for ${tag}`);
             }
 
-            const { data: refs } = await github.rest.git.listMatchingRefs({
-              owner,
-              repo,
-              ref: `tags/${packageName}`,
-            });
-
-            for (const ref of refs) {
-              const tag = ref.ref.replace('refs/tags/', '');
-              if (!shouldDelete(tag)) {
-                continue;
-              }
+            try {
               await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
               core.info(`Deleted tag ${tag}`);
+            } catch (error) {
+              if (![404, 422].includes(error.status)) throw error;
+              core.info(`No existing tag ${tag}`);
             }
 
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ env.RELEASE_TAG }}
+          tag_name: ${{ format('{0}-v{1}', env.PACKAGE_NAME, inputs.version) }}
           target_commitish: ${{ github.sha }}
-          name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
+          name: "${{ format('{0}-v{1}', env.PACKAGE_NAME, inputs.version) }}"
           overwrite_files: true
           files: |
             dist/*.whl

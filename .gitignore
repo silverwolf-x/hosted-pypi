@@ -11,3 +11,4 @@ site/
 *.tar.gz
 wheelhouse/
 reference/
+AGENTS.md
