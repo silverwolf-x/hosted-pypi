@@ -5,7 +5,7 @@ name: Update Versions
 #   TALIB_C_VER  — TA-Lib C 库（GitHub Releases，Dependabot 不支持此类追踪）
 #   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
 #   CIBW_MANYLINUX_X86_64_IMAGE — manylinux x86_64 镜像（pypa/manylinux）
-# .env 更新并合并 PR 后，talib.yml 的 push 触发器（监控 .github/.env）自动重建 wheel。
+# `GITHUB_TOKEN` 在部分仓库策略下无法创建 PR；此工作流固定使用 `UPDATE_VERSIONS_TOKEN` 作为治本方案。
 on:
   schedule:
     - cron: "0 9 * * 1"   # 每周一 09:00 UTC
@@ -18,10 +18,12 @@ permissions:
 jobs:
   update-versions:
     runs-on: ubuntu-latest
+    env:
+      UPDATE_VERSIONS_TOKEN: ${{ secrets.UPDATE_VERSIONS_TOKEN }}
     steps:
       - uses: actions/checkout@v6
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.UPDATE_VERSIONS_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-python@v6
         with:
@@ -61,15 +63,12 @@ jobs:
           def latest_manylinux_x86_64_image():
             readme = fetch_text('https://raw.githubusercontent.com/pypa/manylinux/main/README.rst')
             candidates = []
-            pattern = re.compile(r'(?ms)^####\s+(manylinux[^\s]+).*?(?=^####\s+|\Z)')
+            pattern = re.compile(r'quay\.io/pypa/(?P<policy>manylinux(?:\d+|_\d+_\d+))_x86_64')
             for match in pattern.finditer(readme):
-              image = match.group(1)
-              section = match.group(0)
-              if re.search(r'(?:x86_64|x86-64) image:', section):
-                candidates.append(image)
+              candidates.append(match.group('policy'))
             if not candidates:
               raise RuntimeError('No manylinux x86_64 image found in pypa/manylinux README')
-            return max(candidates, key=manylinux_version_key)
+            return f"{max(candidates, key=manylinux_version_key)}_x86_64"
 
           # ── TALIB_PY_VER：PyPI ─────────────────────────────────────────────
           latest_py = fetch('https://pypi.org/pypi/ta-lib/json')['info']['version']
@@ -131,11 +130,19 @@ jobs:
               % (latest_py, latest_c, cibw, manylinux_x86_64_image, str(changed).lower())
           )
 
+      - name: Validate PR token
+        if: steps.update.outputs.changed == 'true' && env.UPDATE_VERSIONS_TOKEN == ''
+        shell: bash
+        run: |
+          echo "::error::Missing UPDATE_VERSIONS_TOKEN secret. This repository forbids pull request creation with GITHUB_TOKEN, so configure a PAT or GitHub App token with contents:write and pull-requests:write permissions."
+          exit 1
+
       - name: Create Pull Request
         if: steps.update.outputs.changed == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ env.UPDATE_VERSIONS_TOKEN }}
+          base: ${{ github.event.repository.default_branch }}
           branch: chore/update-versions
           commit-message: "chore: update .env — py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
           title: "chore: update .env — ta-lib py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"

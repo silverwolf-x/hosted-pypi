@@ -22,6 +22,7 @@ on:
 
 env:
   PACKAGE_NAME: "mypackage"      # ← 改成你的包名
+  RELEASE_TAG: "mypackage"       # ← 保持稳定 tag，并在每次构建时重新指向最新 commit
   # CPython 最新3个大版本，每年10月新版发布后滚动更新
   CIBW_BUILD: "cp311-* cp312-* cp313-*"
   CIBW_SKIP: "*-musllinux_*"
@@ -102,9 +103,36 @@ jobs:
           merge-multiple: true
           path: dist
 
+      - name: 删除旧 Release 与 Tag
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = process.env.RELEASE_TAG;
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.id });
+              core.info(`Deleted existing release for ${tag}`);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.info(`No existing release for ${tag}`);
+            }
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+              core.info(`Deleted existing tag ${tag}`);
+            } catch (error) {
+              if (![404, 422].includes(error.status)) throw error;
+              core.info(`No existing tag ${tag}`);
+            }
+
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
           overwrite_files: true
           files: |

@@ -12,11 +12,12 @@ on:
     branches: [dev]
     paths:
       - ".github/workflows/talib.yml"
-      - ".github/.env"          # .env 版本更新合并后自动触发 wheel 重建
+      - ".github/.env"          # .env 版本更新后触发 wheel 重建（直推或合并 PR）
   workflow_dispatch:
 
 env:
   # 版本变量由 .github/.env 在各 job 第一步加载，此处只保留静态 cibuildwheel 配置
+  RELEASE_TAG: "talib"
   CIBW_BUILD_VERBOSITY: 2
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BEFORE_BUILD: "pip install -U setuptools Cython wheel meson-python ninja && pip install -U numpy"
@@ -103,7 +104,7 @@ jobs:
           # step-level env: ${{ env.X }} 在步骤启动前展开为字面值。
           # CIBW_BEFORE_ALL 在 manylinux 容器内执行，容器不继承宿主 env，$TALIB_C_VER 为空。
           # 必须在此处用 ${{ env.TALIB_C_VER }} 展开为字面字符串后传入容器。
-          CIBW_ARCHS_LINUX: auto64
+          CIBW_ARCHS_LINUX: x86_64
           CIBW_MANYLINUX_X86_64_IMAGE: ${{ env.CIBW_MANYLINUX_X86_64_IMAGE }}
           CIBW_REPAIR_WHEEL_COMMAND_LINUX: "auditwheel repair --only-plat -w {dest_dir} {wheel}"
           CIBW_BEFORE_ALL_LINUX: "TALIB_C_VER=${{ env.TALIB_C_VER }} bash /project/.github/scripts/talib/build-ta-lib-linux.sh"
@@ -138,9 +139,36 @@ jobs:
           merge-multiple: true
           path: dist/
 
+      - name: 删除旧 Release 与 Tag
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const tag = process.env.RELEASE_TAG;
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({ owner, repo, tag });
+              await github.rest.repos.deleteRelease({ owner, repo, release_id: release.id });
+              core.info(`Deleted existing release for ${tag}`);
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.info(`No existing release for ${tag}`);
+            }
+            try {
+              await github.rest.git.deleteRef({ owner, repo, ref: `tags/${tag}` });
+              core.info(`Deleted existing tag ${tag}`);
+            } catch (error) {
+              if (![404, 422].includes(error.status)) throw error;
+              core.info(`No existing tag ${tag}`);
+            }
+
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: talib-v${{ env.TALIB_PY_VER }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          target_commitish: ${{ github.sha }}
           name: "TA-Lib v${{ env.TALIB_PY_VER }}"
           overwrite_files: true
           files: |
