@@ -2,13 +2,14 @@ name: Build TA-Lib Wheels
 
 on:
   workflow_dispatch:
-  workflow_call:
+  # Dependabot 更新 talib-requirements.txt 并合并 PR 后自动触发
+  pull_request:
+    types: [closed]
+    paths:
+      - ".github/talib-requirements.txt"
 
 env:
-  # CPython 最新3个大版本，每年10月新版发布后滚动更新
-  CIBW_BUILD: "cp311-* cp312-* cp313-*"
-  CIBW_SKIP: "*-musllinux_*"
-  CIBW_BUILD_VERBOSITY: 2
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 permissions:
   contents: write
@@ -16,39 +17,30 @@ permissions:
   id-token: write
 
 jobs:
-  # ── 1. 读取 Python 包版本（Dependabot 维护）+ 自动获取最新 C 库版本 ─────────
+  # ── 1. 读取 Python 包版本 + 自动获取最新 C 库版本 + 动态计算 CIBW_BUILD ──────
   get_version:
+    # 手动触发始终运行；PR 触发仅在 Dependabot PR 被合并时运行
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'dependabot/'))
     runs-on: ubuntu-latest
     outputs:
-      talib_py_ver: ${{ steps.read.outputs.talib_py_ver }}
-      talib_c_ver: ${{ steps.read.outputs.talib_c_ver }}
+      talib_py_ver: ${{ steps.resolve.outputs.talib_py_ver }}
+      talib_c_ver: ${{ steps.resolve.outputs.talib_c_ver }}
+      cibw_build: ${{ steps.resolve.outputs.cibw_build }}
     steps:
       - uses: actions/checkout@v6
-      - name: Read Python version and fetch latest C library version
-        id: read
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Resolve TA-Lib versions
+        id: resolve
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          # 过滤注释行后提取版本号（避免注释中的示例版本干扰）
-          PY_VER=$(grep -v '^\s*#' .github/talib-requirements.txt \
-            | grep -oP '(?<=ta-lib==)\S+' | head -1)
-          if [ -z "$PY_VER" ]; then
-            echo "::error::无法从 talib-requirements.txt 读取版本号" && exit 1
-          fi
-          echo "talib_py_ver=${PY_VER}" >> "$GITHUB_OUTPUT"
-          echo "TA-Lib Python version: ${PY_VER}"
-
-          # 从 GitHub API 获取 TA-Lib C 库最新发布版本
-          C_VER=$(curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/TA-Lib/ta-lib/releases/latest" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
-          if [ -z "$C_VER" ]; then
-            echo "::error::无法从 GitHub API 获取 TA-Lib C 库版本" && exit 1
-          fi
-          echo "talib_c_ver=${C_VER}" >> "$GITHUB_OUTPUT"
-          echo "TA-Lib C library version: ${C_VER}"
+        run: python .github/scripts/talib/resolve_versions.py
 
   # ── 2. 构建 wheels（Linux manylinux_2_28_x86_64 + Windows AMD64）───────────
   build:
@@ -58,6 +50,26 @@ jobs:
     env:
       TALIB_PY_VER: ${{ needs.get_version.outputs.talib_py_ver }}
       TALIB_C_VER: ${{ needs.get_version.outputs.talib_c_ver }}
+      CIBW_BUILD: ${{ needs.get_version.outputs.cibw_build }}
+      CIBW_SKIP: "*-musllinux_*"
+      CIBW_BUILD_VERBOSITY: 2
+      CIBW_ARCHS_LINUX: x86_64
+      CIBW_ARCHS_WINDOWS: AMD64
+      CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
+      CIBW_BEFORE_ALL_LINUX: bash /project/.github/scripts/talib/build-ta-lib-linux.sh
+      CIBW_ENVIRONMENT_LINUX: >-
+        TALIB_C_VER="$TALIB_C_VER"
+        TA_LIBRARY_PATH="/usr/local/lib"
+        TA_INCLUDE_PATH="/usr/local/include"
+        PIP_NO_BUILD_ISOLATION=false
+      CIBW_ENVIRONMENT_WINDOWS: >-
+        TALIB_C_VER="$TALIB_C_VER"
+        TA_LIBRARY_PATH="ta-lib-$TALIB_C_VER\\_build;$LIB"
+        TA_INCLUDE_PATH="ta-lib-$TALIB_C_VER\\include;$INCLUDE"
+        PIP_NO_BUILD_ISOLATION=false
+      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
+        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
+      MSBUILDTREATHIGHERTOOLSVERSIONASCURRENT: 1
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +80,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Prepare TA-Lib Python source
+        run: python .github/scripts/talib/prepare_source.py
+
       - name: Setup MSVC (Windows only)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -77,70 +96,23 @@ jobs:
       - name: Build TA-Lib C library (Windows)
         if: runner.os == 'Windows'
         shell: cmd
-        run: |
-          @echo on
-          curl -fsSL -o talib-c.zip https://github.com/TA-Lib/ta-lib/archive/refs/tags/v%TALIB_C_VER%.zip
-          if errorlevel 1 exit /B 1
-          tar -xf talib-c.zip
-          if errorlevel 1 exit /B 1
-          setlocal
-          cd ta-lib-%TALIB_C_VER%
-          mkdir include\ta-lib
-          copy /Y include\*.h include\ta-lib\
-          md _build
-          cd _build
-          cmake.exe .. -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release
-          if errorlevel 1 exit /B 1
-          nmake.exe /nologo all
-          if errorlevel 1 exit /B 1
-          copy /Y /B ta-lib-static.lib ta-lib.lib
-          endlocal
-
-      - name: Download TA-Lib Python source
-        shell: bash
-        run: |
-          mkdir -p talib-dist talib-py
-          pip download --no-deps --no-binary :all: -d talib-dist "ta-lib==${TALIB_PY_VER}"
-          tar -xzf talib-dist/ta_lib-*.tar.gz -C talib-py --strip-components=1
+        run: .github\scripts\talib\build-ta-lib-windows.cmd
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3
+        uses: pypa/cibuildwheel@v3.4.1
         with:
           package-dir: talib-py
+          output-dir: wheelhouse
         env:
-          CIBW_ARCHS_LINUX: x86_64
-          CIBW_ARCHS_WINDOWS: AMD64
-          CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
-          # Linux: 在 manylinux 容器内编译 TA-Lib C 库（宿主不需要单独编译）
-          CIBW_BEFORE_ALL_LINUX: |
-            set -eux
-            yum install -y cmake make
-            curl -fsSL -o /tmp/talib-c.tar.gz \
-              "https://github.com/TA-Lib/ta-lib/archive/refs/tags/v${TALIB_C_VER}.tar.gz"
-            tar -xzf /tmp/talib-c.tar.gz -C /tmp/
-            cd /tmp/ta-lib-${TALIB_C_VER}
-            mkdir -p include/ta-lib && cp include/*.h include/ta-lib/
-            mkdir _build && cd _build
-            cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local
-            make -j$(nproc) && make install && ldconfig
-          CIBW_ENVIRONMENT_LINUX: >-
-            TALIB_C_VER="{TALIB_C_VER}"
-            TA_LIBRARY_PATH="/usr/local/lib"
-            TA_INCLUDE_PATH="/usr/local/include"
-            PIP_NO_BUILD_ISOLATION=false
-          CIBW_ENVIRONMENT_WINDOWS: >-
-            TALIB_C_VER="{TALIB_C_VER}"
-            TA_LIBRARY_PATH="ta-lib-{TALIB_C_VER}\\_build;$LIB"
-            TA_INCLUDE_PATH="ta-lib-{TALIB_C_VER}\\include;$INCLUDE"
-            PIP_NO_BUILD_ISOLATION=false
-          # 强制单 manylinux 标签，文件名干净
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-            auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
+          CIBW_BEFORE_ALL_LINUX: ${{ env.CIBW_BEFORE_ALL_LINUX }}
+          CIBW_ENVIRONMENT_LINUX: ${{ env.CIBW_ENVIRONMENT_LINUX }}
+          CIBW_ENVIRONMENT_WINDOWS: ${{ env.CIBW_ENVIRONMENT_WINDOWS }}
+          CIBW_REPAIR_WHEEL_COMMAND_LINUX: ${{ env.CIBW_REPAIR_WHEEL_COMMAND_LINUX }}
 
       - uses: actions/upload-artifact@v7
         with:
           name: wheels-talib-${{ matrix.os }}
-          path: wheelhouse/
+          path: wheelhouse/*.whl
 
   # ── 3. 发布 GitHub Release ─────────────────────────────────────────────────
   release:

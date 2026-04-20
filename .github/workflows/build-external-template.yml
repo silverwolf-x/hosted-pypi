@@ -84,7 +84,7 @@ jobs:
               flags=re.MULTILINE,
           ), encoding='utf-8')
 
-      - uses: pypa/cibuildwheel@v3
+      - uses: pypa/cibuildwheel@v3.4.1
         # CIBW_ENVIRONMENT: MY_LIB_PATH="/usr/local/lib"  # 取消注释并按需配置
 
       - uses: actions/upload-artifact@v7

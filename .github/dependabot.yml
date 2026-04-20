@@ -1,7 +1,7 @@
 version: 2
 updates:
   # ── 1. GitHub Actions：每周更新所有 workflow 中的 action 大版本 ──────────
-  # 将全部 actions 更新合并到一个 PR，减少噪音
+  # 将全部 actions 更新（含 pypa/cibuildwheel）合并到一个 PR，减少噪音
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -15,10 +15,9 @@ updates:
 
   # ── 2. pip（TA-Lib Python 包）：每周检查上游新版本 ──────────────────────
   # 监视 .github/talib-requirements.txt 中的 ta-lib 版本；
-  # 有新版本时创建 PR，由 talib-auto-release.yml 自动触发构建和发布。
-  #
-  # 注意：CIBW_BUILD（Python 版本）由独立的 update-python-versions.yml 管理，
-  #       每年10月新 Python 发布后会自动开 PR 滚动更新。
+  # 有新版本时创建 PR，合并后由 talib.yml 的 pull_request 触发器自动构建发布。
+  # CIBW_BUILD 在 talib.yml 的 get_version job 中实时从 endoflife.date 动态计算，
+  # 无需单独的更新 workflow。
   - package-ecosystem: "pip"
     directory: "/.github"
     schedule:
