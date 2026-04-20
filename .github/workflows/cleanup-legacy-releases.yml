@@ -20,7 +20,7 @@ jobs:
             const packages = ['a', 'b', 'talib'];
 
             function isLegacyTag(tag) {
-              return packages.some((pkg) => tag === `${pkg}-latest` || tag.startsWith(`${pkg}-v`));
+              return packages.some((pkg) => tag === pkg || tag === `${pkg}-latest`);
             }
 
             const releases = await github.paginate(github.rest.repos.listReleases, {
