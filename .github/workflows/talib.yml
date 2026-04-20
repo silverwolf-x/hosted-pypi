@@ -1,24 +1,22 @@
 name: Build TA-Lib Wheels
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Trigger                                                                       
-#   workflow_dispatch  — 手动触发                                                
-#   pull_request       — Dependabot 更新 talib-requirements.txt（Python 版本）  
-#                        或 update-talib-c-version.yml PR 更新 talib-c-requirements.txt
-#                        （C 库版本）并合并后自动触发                            
+# Trigger
+#   push          — 版本更新 PR（update-talib-versions / update-python-versions）
+#                   合并到 dev 修改本文件时自动触发
+#   workflow_dispatch — 手动触发
 # ──────────────────────────────────────────────────────────────────────────────
 on:
-  workflow_dispatch:
-  pull_request:
-    types: [closed]
+  push:
+    branches: [dev]
     paths:
-      - ".github/talib-requirements.txt"
-      - ".github/talib-c-requirements.txt"
+      - ".github/workflows/talib.yml"
+  workflow_dispatch:
 
 env:
-  # ── Python 构建目标：最新 3 个 CPython 维护版本 ───────────────────────────
-  # 由 .github/workflows/update-python-versions.yml 每周自动滚动更新（开 PR）
-  CIBW_BUILD: "cp312-* cp313-* cp314-*"
+  TALIB_PY_VER: "0.6.8"        # ← update-talib-versions.yml 每周检查 PyPI 并开 PR
+  TALIB_C_VER:  "0.6.4"        # ← update-talib-versions.yml 每周检查 GitHub Releases 并开 PR
+  CIBW_BUILD: "cp312-* cp313-* cp314-*"  # ← update-python-versions.yml 每周更新
   CIBW_BUILD_VERBOSITY: 2
   CIBW_SKIP: "*-musllinux_*"
   MSBUILDTREATHIGHERTOOLSVERSIONASCURRENT: 1
@@ -30,46 +28,18 @@ permissions:
   id-token: write
 
 jobs:
-  # ── 1. 从版本文件中读取 Python 包版本与 C 库版本 ──────────────────────────
-  prepare:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.pull_request.merged == true
-    runs-on: ubuntu-latest
-    outputs:
-      talib_py_ver: ${{ steps.read.outputs.talib_py_ver }}
-      talib_c_ver: ${{ steps.read.outputs.talib_c_ver }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Read versions from requirements files
-        id: read
-        run: |
-          PY_VER=$(grep -v '^\s*#' .github/talib-requirements.txt \
-            | grep -oP '(?<=ta-lib==)\S+' | head -1)
-          [ -z "$PY_VER" ] && echo "::error::Cannot read ta-lib Python version" && exit 1
-          echo "talib_py_ver=${PY_VER}" >> "$GITHUB_OUTPUT"
-
-          C_VER=$(grep -v '^\s*#' .github/talib-c-requirements.txt \
-            | grep -v '^$' | head -1 | tr -d '[:space:]')
-          [ -z "$C_VER" ] && echo "::error::Cannot read ta-lib C version" && exit 1
-          echo "talib_c_ver=${C_VER}" >> "$GITHUB_OUTPUT"
-
-          echo "Python=${PY_VER}  C=${C_VER}"
-
-  # ── 2. 构建 Windows AMD64 wheels ──────────────────────────────────────────
+  # ── 1. 构建 Windows AMD64 wheels ──────────────────────────────────────────
   build_windows:
-    needs: prepare
     name: Windows AMD64
     runs-on: windows-latest
     env:
-      TALIB_PY_VER: ${{ needs.prepare.outputs.talib_py_ver }}
-      TALIB_C_VER: ${{ needs.prepare.outputs.talib_c_ver }}
       CIBW_ARCHS_WINDOWS: AMD64
+      # $TALIB_C_VER / $GITHUB_WORKSPACE 是运行时 shell 变量，由 cibuildwheel 从宿主环境展开。
+      # 不可用 ${{ env.X }}：job-level env: 块不支持 env context（会报 Unrecognized named-value）。
+      # 使用绝对路径：package-dir: talib-py 改变了 cibuildwheel 内的工作目录，相对路径失效。
       CIBW_ENVIRONMENT_WINDOWS: >-
-        TALIB_C_VER="$TALIB_C_VER"
-        TA_LIBRARY_PATH="ta-lib-$TALIB_C_VER\\_build;$LIB"
-        TA_INCLUDE_PATH="ta-lib-$TALIB_C_VER\\include;$INCLUDE"
+        TA_LIBRARY_PATH="$GITHUB_WORKSPACE/ta-lib-$TALIB_C_VER/_build;$LIB"
+        TA_INCLUDE_PATH="$GITHUB_WORKSPACE/ta-lib-$TALIB_C_VER/include;$INCLUDE"
         PIP_NO_BUILD_ISOLATION=false
     steps:
       - uses: actions/checkout@v6
@@ -100,6 +70,12 @@ jobs:
               src = top if top.is_dir() else Path(tmp)
               for item in src.iterdir():
                   (shutil.copytree if item.is_dir() else shutil.copy2)(item, dest / item.name)
+          # 修复 Cython warning: __POLARS_SERIES 在 class scope 触发 name-mangling 歧义
+          for f in dest.rglob('*.pxi'):
+              t = f.read_text(encoding='utf-8')
+              if '__POLARS_SERIES' in t:
+                  f.write_text(t.replace('__POLARS_SERIES', '_POLARS_SERIES'), encoding='utf-8')
+                  print(f'  patched {f}')
           print(f'Prepared ta-lib {ver} -> talib-py/')
 
       - uses: ilammy/msvc-dev-cmd@v1
@@ -120,24 +96,21 @@ jobs:
           name: wheels-talib-windows
           path: wheelhouse/*.whl
 
-  # ── 3. 构建 Linux manylinux_2_28 x86_64 wheels ────────────────────────────
+  # ── 2. 构建 Linux x86_64 wheels ──────────────────────────────────────────
   build_linux:
-    needs: prepare
-    name: Linux x86_64 (manylinux_2_28)
+    name: Linux x86_64
     runs-on: ubuntu-latest
     env:
-      TALIB_PY_VER: ${{ needs.prepare.outputs.talib_py_ver }}
-      TALIB_C_VER: ${{ needs.prepare.outputs.talib_c_ver }}
-      CIBW_ARCHS_LINUX: x86_64
-      CIBW_MANYLINUX_X86_64_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
-      CIBW_BEFORE_ALL_LINUX: bash /project/.github/scripts/talib/build-ta-lib-linux.sh
+      # CIBW_BEFORE_ALL 在容器内独立执行，不继承 CIBW_ENVIRONMENT 中的变量；
+      # 用 shell prefix 赋值传入 TALIB_C_VER（根因：TALIB_C_VER is required 报错）
+      # 同理不可用 ${{ env.X }}，改用运行时变量 $TALIB_C_VER
+      CIBW_BEFORE_ALL_LINUX: >-
+        TALIB_C_VER=$TALIB_C_VER
+        bash /project/.github/scripts/talib/build-ta-lib-linux.sh
       CIBW_ENVIRONMENT_LINUX: >-
-        TALIB_C_VER="$TALIB_C_VER"
         TA_LIBRARY_PATH="/usr/local/lib"
         TA_INCLUDE_PATH="/usr/local/include"
         PIP_NO_BUILD_ISOLATION=false
-      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
     steps:
       - uses: actions/checkout@v6
 
@@ -167,6 +140,11 @@ jobs:
               src = top if top.is_dir() else Path(tmp)
               for item in src.iterdir():
                   (shutil.copytree if item.is_dir() else shutil.copy2)(item, dest / item.name)
+          for f in dest.rglob('*.pxi'):
+              t = f.read_text(encoding='utf-8')
+              if '__POLARS_SERIES' in t:
+                  f.write_text(t.replace('__POLARS_SERIES', '_POLARS_SERIES'), encoding='utf-8')
+                  print(f'  patched {f}')
           print(f'Prepared ta-lib {ver} -> talib-py/')
 
       - uses: pypa/cibuildwheel@v3.4.1
@@ -179,9 +157,9 @@ jobs:
           name: wheels-talib-linux
           path: wheelhouse/*.whl
 
-  # ── 4. 发布 GitHub Release ─────────────────────────────────────────────────
+  # ── 3. 发布 GitHub Release ─────────────────────────────────────────────────
   release:
-    needs: [prepare, build_windows, build_linux]
+    needs: [build_windows, build_linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -197,13 +175,13 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
-          tag_name: talib-v${{ needs.prepare.outputs.talib_py_ver }}
-          name: "TA-Lib v${{ needs.prepare.outputs.talib_py_ver }}"
+          tag_name: talib-v${{ env.TALIB_PY_VER }}
+          name: "TA-Lib v${{ env.TALIB_PY_VER }}"
           files: |
             dist/*.whl
             dist/SHA256SUMS.txt
 
-  # ── 5. 更新 PyPI 静态索引 ──────────────────────────────────────────────────
+  # ── 4. 更新 PyPI 静态索引 ──────────────────────────────────────────────────
   update-index:
     needs: release
     uses: ./.github/workflows/update-index.yml

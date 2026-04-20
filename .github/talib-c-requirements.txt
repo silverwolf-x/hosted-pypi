@@ -1,4 +1,0 @@
-# TA-Lib C library version
-# Updated automatically by .github/workflows/update-talib-c-version.yml
-# Merging a PR that changes this file triggers wheel rebuilds via talib.yml
-0.6.4
