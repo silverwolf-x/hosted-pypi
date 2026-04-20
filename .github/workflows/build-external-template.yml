@@ -104,7 +104,7 @@ jobs:
           path: dist
 
       - name: 删除旧 Release 与 Tag
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           PACKAGE_NAME: ${{ env.PACKAGE_NAME }}
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
