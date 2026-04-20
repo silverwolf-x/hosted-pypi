@@ -1,4 +1,4 @@
-﻿name: Build TA-Lib Wheels
+name: Build TA-Lib Wheels
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 版本来源：.github/.env（由 update-versions.yml 每周自动更新，支持手动 dispatch）
@@ -140,7 +140,7 @@ jobs:
           path: dist/
 
       - name: 删除旧 Release 与 Tag
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           PACKAGE_NAME: talib
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
