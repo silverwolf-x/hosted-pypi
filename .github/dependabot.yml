@@ -1,7 +1,8 @@
 version: 2
 updates:
-  # ── 1. GitHub Actions：每周更新所有 workflow 中的 action 大版本 ──────────
-  # 将全部 actions 更新（含 pypa/cibuildwheel）合并到一个 PR，减少噪音
+  # GitHub Actions：每周更新所有 workflow 中的 action 版本（含 pypa/cibuildwheel）
+  # TA-Lib 版本（TALIB_PY_VER / TALIB_C_VER）和 CIBW_BUILD 均由 update-versions.yml 管理，
+  # 统一写入 .github/.env，talib.yml 从 .env 加载——Dependabot 无法追踪 PyPI/GH Releases 并写入 env。
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -12,21 +13,3 @@ updates:
       github-actions:
         patterns:
           - "*"
-
-  # ── 2. pip（TA-Lib Python 包）：每周检查上游新版本 ──────────────────────
-  # 监视 .github/talib-requirements.txt 中的 ta-lib 版本；
-  # 有新版本时创建 PR，合并后由 talib.yml 的 pull_request 触发器自动构建发布。
-  # CIBW_BUILD 在 talib.yml 的 get_version job 中实时从 endoflife.date 动态计算，
-  # 无需单独的更新 workflow。
-  - package-ecosystem: "pip"
-    directory: "/.github"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 3
-    allow:
-      - dependency-name: "ta-lib"
-    labels:
-      - "talib-update"
-    commit-message:
-      prefix: "chore(talib)"

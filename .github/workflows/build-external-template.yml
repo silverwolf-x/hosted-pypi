@@ -102,16 +102,13 @@ jobs:
           merge-multiple: true
           path: dist
 
-      - name: 生成 SHA256 校验
-        run: cd dist && sha256sum *.whl > SHA256SUMS && cat SHA256SUMS
-
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
           name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
+          overwrite_files: true
           files: |
             dist/*.whl
-            dist/SHA256SUMS
 
   update-index:
     needs: release

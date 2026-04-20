@@ -11,7 +11,7 @@ on:
 env:
   PACKAGE_NAME: b
   # CPython 最新3个大版本，每年10月新版发布后滚动更新
-  CIBW_BUILD: "cp311-* cp312-* cp313-*"
+  CIBW_BUILD: "cp312-* cp313-* cp314-*"
   CIBW_SKIP: "*-musllinux_*"
   CIBW_BUILD_VERBOSITY: 2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -31,12 +31,6 @@ jobs:
         include:
           - os: ubuntu-latest
           - os: windows-latest
-    env:
-      CIBW_ARCHS_LINUX: x86_64
-      CIBW_ARCHS_WINDOWS: AMD64
-      # 强制单 manylinux 标签，文件名干净
-      CIBW_REPAIR_WHEEL_COMMAND_LINUX: >-
-        auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
 
     steps:
       - uses: actions/checkout@v6
@@ -108,17 +102,14 @@ jobs:
           name: sdist-${{ env.PACKAGE_NAME }}
           path: dist
 
-      - name: 生成 SHA256 校验
-        run: cd dist && sha256sum * > SHA256SUMS && cat SHA256SUMS
-
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.PACKAGE_NAME }}-v${{ inputs.version }}
           name: "${{ env.PACKAGE_NAME }} v${{ inputs.version }}"
+          overwrite_files: true
           files: |
             dist/*.whl
             dist/*.tar.gz
-            dist/SHA256SUMS
 
   update-index:
     needs: release

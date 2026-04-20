@@ -1,0 +1,156 @@
+name: Update Versions
+
+# 维护 .github/.env 中的四个版本变量（单一真相来源）：
+#   TALIB_PY_VER — ta-lib Python 包（PyPI）
+#   TALIB_C_VER  — TA-Lib C 库（GitHub Releases，Dependabot 不支持此类追踪）
+#   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
+#   CIBW_MANYLINUX_X86_64_IMAGE — manylinux x86_64 镜像（pypa/manylinux）
+# .env 更新并合并 PR 后，talib.yml 的 push 触发器（监控 .github/.env）自动重建 wheel。
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # 每周一 09:00 UTC
+  workflow_dispatch:        # 支持手动触发
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-versions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Fetch latest versions and update .env
+        id: update
+        shell: python
+        run: |
+          import json, os, re
+          from datetime import date
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          def fetch(url):
+              req = Request(url, headers={'User-Agent': 'update-versions/1.0'})
+              with urlopen(req) as r:
+                  return json.load(r)
+
+          def fetch_text(url):
+              req = Request(url, headers={'User-Agent': 'update-versions/1.0'})
+              with urlopen(req) as r:
+                  return r.read().decode('utf-8')
+
+          def manylinux_version_key(image):
+            if image == 'manylinux1':
+              return (2, 5)
+            if image == 'manylinux2010':
+              return (2, 12)
+            if image == 'manylinux2014':
+              return (2, 17)
+            match = re.fullmatch(r'manylinux_(\d+)_(\d+)', image)
+            if match:
+              return (int(match.group(1)), int(match.group(2)))
+            raise ValueError(f'Unsupported manylinux image: {image!r}')
+
+          def latest_manylinux_x86_64_image():
+            readme = fetch_text('https://raw.githubusercontent.com/pypa/manylinux/main/README.rst')
+            candidates = []
+            pattern = re.compile(r'(?ms)^####\s+(manylinux[^\s]+).*?(?=^####\s+|\Z)')
+            for match in pattern.finditer(readme):
+              image = match.group(1)
+              section = match.group(0)
+              if re.search(r'(?:x86_64|x86-64) image:', section):
+                candidates.append(image)
+            if not candidates:
+              raise RuntimeError('No manylinux x86_64 image found in pypa/manylinux README')
+            return max(candidates, key=manylinux_version_key)
+
+          # ── TALIB_PY_VER：PyPI ─────────────────────────────────────────────
+          latest_py = fetch('https://pypi.org/pypi/ta-lib/json')['info']['version']
+
+          # ── TALIB_C_VER：GitHub Releases ───────────────────────────────────
+          latest_c = fetch(
+              'https://api.github.com/repos/ta-lib/ta-lib/releases/latest'
+          )['tag_name'].lstrip('v')
+
+          # ── CIBW_MANYLINUX_X86_64_IMAGE：pypa/manylinux README ───────────
+          manylinux_x86_64_image = latest_manylinux_x86_64_image()
+
+          # ── CIBW_BUILD：最新 3 个 CPython 稳定版本 ─────────────────────────
+          cycles = fetch('https://endoflife.date/api/python.json')
+          today = date.today().isoformat()
+          supported = []
+          for c in cycles:
+              cy = str(c.get('cycle', ''))
+              if not cy.startswith('3.'):
+                  continue
+              eol = c.get('eol', '')
+              if (isinstance(eol, bool) and eol) or (isinstance(eol, str) and eol <= today):
+                  continue
+              if re.search(r'[a-zA-Z]', str(c.get('latest', ''))):
+                  continue
+              try:
+                  supported.append((int(cy.split('.', 1)[1]), cy))
+              except (IndexError, ValueError):
+                  pass
+          supported.sort(key=lambda x: x[0], reverse=True)
+          top3 = sorted((cy for _, cy in supported[:3]), key=lambda cy: int(cy.split('.', 1)[1]))
+          assert len(top3) == 3, f'Expected 3 Python cycles, got {top3!r}'
+          cibw = ' '.join(f'cp{cy.replace(".", "")}-*' for cy in top3)
+
+          # ── 写入 .github/.env ──────────────────────────────────────────────
+          env_file = Path('.github/.env')
+          old = env_file.read_text(encoding='utf-8') if env_file.exists() else ''
+          new = (
+              f'TALIB_PY_VER={latest_py}\n'
+              f'TALIB_C_VER={latest_c}\n'
+              f'CIBW_BUILD={cibw}\n'
+              f'CIBW_MANYLINUX_X86_64_IMAGE={manylinux_x86_64_image}\n'
+          )
+          changed = new != old
+          if changed:
+              env_file.write_text(new, encoding='utf-8')
+
+          out = os.environ.get('GITHUB_OUTPUT', '')
+          if out:
+              with open(out, 'a') as f:
+                  f.write(f'py_ver={latest_py}\n')
+                  f.write(f'c_ver={latest_c}\n')
+                  f.write(f'cibw_build={cibw}\n')
+                  f.write(f'manylinux_x86_64_image={manylinux_x86_64_image}\n')
+                  f.write(f'changed={"true" if changed else "false"}\n')
+
+          print(
+              'TALIB_PY_VER=%s  TALIB_C_VER=%s  CIBW_BUILD=%s  CIBW_MANYLINUX_X86_64_IMAGE=%s  changed=%s'
+              % (latest_py, latest_c, cibw, manylinux_x86_64_image, str(changed).lower())
+          )
+
+      - name: Create Pull Request
+        if: steps.update.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: chore/update-versions
+          commit-message: "chore: update .env — py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
+          title: "chore: update .env — ta-lib py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
+          body: |
+            ## 自动版本更新
+
+            该 PR 由 `.github/workflows/update-versions.yml` 自动生成，更新 `.github/.env`。
+
+            | 变量 | 新值 | 数据来源 |
+            |------|------|---------|
+            | `TALIB_PY_VER` | `${{ steps.update.outputs.py_ver }}` | https://pypi.org/project/ta-lib/ |
+            | `TALIB_C_VER`  | `${{ steps.update.outputs.c_ver }}` | https://github.com/ta-lib/ta-lib/releases |
+            | `CIBW_BUILD`   | `${{ steps.update.outputs.cibw_build }}` | https://endoflife.date/python |
+            | `CIBW_MANYLINUX_X86_64_IMAGE` | `${{ steps.update.outputs.manylinux_x86_64_image }}` | https://github.com/pypa/manylinux |
+
+            合并后 `talib.yml` 的 push 触发器（监控 `.github/.env`）自动执行 wheel 重建与发布。
+          labels: version-update
+          delete-branch: true
