@@ -1,15 +1,20 @@
 version: 2
 updates:
-  # GitHub Actions：每周更新所有 workflow 中的 action 版本（含 pypa/cibuildwheel）
+  # GitHub Actions：每天检查 action 版本。
+  # minor/patch 合并到一个 PR，major 单独开 PR，避免 Node runtime 这种大变更被埋在大杂烩里。
   # TA-Lib 版本（TALIB_PY_VER / TALIB_C_VER）和 CIBW_BUILD 均由 update-versions.yml 管理，
   # 统一写入 .github/.env，talib.yml 从 .env 加载——Dependabot 无法追踪 PyPI/GH Releases 并写入 env。
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
-      day: "monday"
+      interval: "daily"
+      time: "09:00"
+      timezone: "UTC"
     open-pull-requests-limit: 5
     groups:
-      github-actions:
+      github-actions-minor-patch:
         patterns:
           - "*"
+        update-types:
+          - minor
+          - patch
