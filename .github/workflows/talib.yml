@@ -102,6 +102,8 @@ jobs:
           # step-level env: ${{ env.X }} 在步骤启动前展开为字面值。
           # CIBW_BEFORE_ALL 在 manylinux 容器内执行，容器不继承宿主 env，$TALIB_C_VER 为空。
           # 必须在此处用 ${{ env.TALIB_C_VER }} 展开为字面字符串后传入容器。
+          CIBW_ARCHS_LINUX: auto64
+          CIBW_MANYLINUX_X86_64_IMAGE: 
           CIBW_BEFORE_ALL_LINUX: "TALIB_C_VER=${{ env.TALIB_C_VER }} bash /project/.github/scripts/talib/build-ta-lib-linux.sh"
           CIBW_ENVIRONMENT_LINUX: >-
             TA_LIBRARY_PATH="/usr/local/lib"
