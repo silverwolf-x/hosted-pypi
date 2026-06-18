@@ -68,7 +68,7 @@ jobs:
         shell: cmd
         run: .github\scripts\talib\build-ta-lib-windows.cmd
 
-      - uses: pypa/cibuildwheel@v3.4.1
+      - uses: pypa/cibuildwheel@v4.1.0
         with:
           package-dir: talib-py
           output-dir: wheelhouse
@@ -98,7 +98,7 @@ jobs:
       - name: Patch Cython source
         run: find talib-py -name '*.pxi' -exec sed -i 's/__POLARS_SERIES/_POLARS_SERIES/g' {} +
 
-      - uses: pypa/cibuildwheel@v3.4.1
+      - uses: pypa/cibuildwheel@v4.1.0
         env:
           # step-level env: ${{ env.X }} 在步骤启动前展开为字面值。
           # CIBW_BEFORE_ALL 在 manylinux 容器内执行，容器不继承宿主 env，$TALIB_C_VER 为空。

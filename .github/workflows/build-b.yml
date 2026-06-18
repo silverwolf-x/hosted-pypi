@@ -55,7 +55,7 @@ jobs:
               flags=re.MULTILINE,
           ), encoding='utf-8')
 
-      - uses: pypa/cibuildwheel@v3.4.1
+      - uses: pypa/cibuildwheel@v4.1.0
         with:
           package-dir: packages/b
           output-dir: wheelhouse
