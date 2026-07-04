@@ -51,7 +51,7 @@ jobs:
         auditwheel repair --plat manylinux_2_28_x86_64 -w {dest_dir} {wheel}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # === 你的构建步骤（Linux）===
       # - name: 编译 C 库 (Linux)
