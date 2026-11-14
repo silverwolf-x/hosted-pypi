@@ -189,10 +189,13 @@ jobs:
               core.info(`No existing tag ${tag}`);
             }
 
+      # tag 指向默认分支最新提交，而非构建时的 sha：若构建期间 main 合入了修改
+      # .github/workflows/* 的提交，在旧 sha 上建 tag 会因 GITHUB_TOKEN 无
+      # workflows 权限而 403。schedule 事件不含 repository 字段，故回退到 main。
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ format('talib-v{0}', env.TALIB_PY_VER) }}
-          target_commitish: ${{ inputs.ref || github.sha }}
+          target_commitish: ${{ github.event.repository.default_branch || 'main' }}
           name: "${{ format('talib-v{0}', env.TALIB_PY_VER) }}"
           overwrite_files: true
           files: |
