@@ -20,6 +20,9 @@ updates:
           - patch
 
   # web/ 前端（Astro + Tailwind）：每周一次，全部合并为一个 PR。
+  # 忽略 major：major 经常和 peer 依赖冲突（如 TypeScript 7 与 @astrojs/check 的
+  # peer typescript ^5||^6 冲突导致 npm ci 失败），需要人工升级。
+  # 所有 Dependabot PR 由 dependabot-automerge.yml 自动合并（npm 需先构建通过）。
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
@@ -28,6 +31,10 @@ updates:
       time: "09:00"
       timezone: "UTC"
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     groups:
       web:
         patterns:

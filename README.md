@@ -19,6 +19,7 @@
 - `talib.yml`：TA-Lib 专用构建（可被 `update-versions.yml` 调用）
 - `update-index.yml`：扫描 Release，生成 PEP 503 索引 + `packages.json`，构建 `web/` 前端并部署 Pages
 - `update-versions.yml`：每周检查上游版本，有变化就直接提交 `.github/.env` 并立即构建发布 TA-Lib
+- `dependabot-automerge.yml`：自动合并 Dependabot PR（npm 需先构建通过）
 - `cleanup-legacy-releases.yml`：一次性清掉历史遗留的非版本化 tag / Release（如 `a`、`b`、`talib`、`*-latest`）
 
 ## 快速使用
@@ -83,7 +84,10 @@ cd web && npm ci && npm run dev
 
 - Dependabot 只负责 workflow 里显式写死的 action 版本
 - 它不负责 `TALIB_PY_VER`、`TALIB_C_VER`、`CIBW_BUILD`，因为这些值在 `.github/.env`，由 `update-versions.yml` 维护
-- `web/` 的 npm 依赖每周一次合并为一个 PR
+- `web/` 的 npm 依赖每周一次合并为一个 PR；忽略 major（如 TypeScript 7 与 `@astrojs/check` 的 peer 冲突），需人工升级
+- 自动合并：`dependabot-automerge.yml` 对所有 Dependabot PR 直接 squash 合并并删除分支，仓库只保留 `main`
+  - npm（`web/`）PR 先跑 `npm ci` + `npm run check` + `npm run build`（数据用 `web/fixtures/packages.json`），通过才合并，合并后自动 dispatch `Update PyPI Index` 重新部署
+  - 默认用 `GITHUB_TOKEN`；它没有 `workflows` 权限，合并修改 `.github/workflows/*` 的 Action 升级 PR 可能被拒。需要时在 Settings → Secrets and variables → **Dependabot** 添加 `DEPENDABOT_AUTOMERGE_TOKEN`（fine-grained PAT：Contents / Pull requests / Workflows 读写），有它会优先使用
 - `actions/github-script@v7` 是 Node 20 runtime，所以会出现 Node 20 deprecated 警告
 - 现在已经改到 `actions/github-script@v8`，Node 24 runtime
 - Dependabot 现在改成每天检查 GitHub Actions；minor/patch 合并，major 单独开 PR，避免大版本升级被埋掉

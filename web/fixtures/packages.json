@@ -1,0 +1,75 @@
+{
+  "repo": "example/hosted-pypi",
+  "index_url": "https://example.github.io/hosted-pypi/simple/",
+  "generated_at": "2026-01-01T00:00:00+00:00",
+  "packages": [
+    {
+      "name": "demo-pkg",
+      "display_name": "demo_pkg",
+      "latest": "1.1.0",
+      "versions": [
+        {
+          "version": "1.1.0",
+          "release_tag": "demo-v1.1.0",
+          "release_url": "https://github.com/example/hosted-pypi/releases/tag/demo-v1.1.0",
+          "published_at": "2026-01-01T00:00:00Z",
+          "files": [
+            {
+              "filename": "demo_pkg-1.1.0-cp313-cp313-manylinux_2_34_x86_64.whl",
+              "url": "https://github.com/example/hosted-pypi/releases/download/demo-v1.1.0/demo_pkg-1.1.0-cp313-cp313-manylinux_2_34_x86_64.whl",
+              "kind": "wheel",
+              "size": 1048576,
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+              "uploaded_at": "2026-01-01T00:00:00Z",
+              "downloads": 0,
+              "python": "cp313",
+              "abi": "cp313",
+              "platform": "manylinux_2_34_x86_64"
+            },
+            {
+              "filename": "demo_pkg-1.1.0-cp313-cp313-win_amd64.whl",
+              "url": "https://github.com/example/hosted-pypi/releases/download/demo-v1.1.0/demo_pkg-1.1.0-cp313-cp313-win_amd64.whl",
+              "kind": "wheel",
+              "size": 524288,
+              "sha256": null,
+              "uploaded_at": "2026-01-01T00:00:00Z",
+              "downloads": 0,
+              "python": "cp313",
+              "abi": "cp313",
+              "platform": "win_amd64"
+            },
+            {
+              "filename": "demo_pkg-1.1.0.tar.gz",
+              "url": "https://github.com/example/hosted-pypi/releases/download/demo-v1.1.0/demo_pkg-1.1.0.tar.gz",
+              "kind": "sdist",
+              "size": 4096,
+              "sha256": null,
+              "uploaded_at": "2026-01-01T00:00:00Z",
+              "downloads": 0
+            }
+          ]
+        },
+        {
+          "version": "1.0.0",
+          "release_tag": "demo-v1.0.0",
+          "release_url": null,
+          "published_at": null,
+          "files": [
+            {
+              "filename": "demo_pkg-1.0.0-py3-none-any.whl",
+              "url": "https://github.com/example/hosted-pypi/releases/download/demo-v1.0.0/demo_pkg-1.0.0-py3-none-any.whl",
+              "kind": "wheel",
+              "size": 2048,
+              "sha256": null,
+              "uploaded_at": null,
+              "downloads": 0,
+              "python": "py3",
+              "abi": "none",
+              "platform": "any"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
