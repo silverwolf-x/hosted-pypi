@@ -1,0 +1,19 @@
+---
+import type { GetStaticPaths } from "astro";
+import Base from "../../../../layouts/Base.astro";
+import PackageView from "../../../../components/PackageView.astro";
+import { loadIndex, type Package } from "../../../../lib/data";
+import { LOCALES, localeParam, toLocale, useTranslations } from "../../../../i18n";
+
+export const getStaticPaths = (() =>
+  LOCALES.flatMap((l) =>
+    loadIndex().packages.map((pkg) => ({ params: { locale: localeParam(l), name: pkg.name }, props: { pkg } })),
+  )) satisfies GetStaticPaths;
+
+const { pkg } = Astro.props as { pkg: Package };
+const t = useTranslations(toLocale(Astro.currentLocale));
+---
+
+<Base title={t.meta.packageTitle(pkg.name, pkg.latest)} description={t.meta.packageDescription(pkg.name, pkg.latest)}>
+  <PackageView pkg={pkg} version={pkg.versions[0]!} />
+</Base>

@@ -1,5 +1,6 @@
 ---
 import CopyButton from "./CopyButton.astro";
+import { toLocale, useTranslations } from "../i18n";
 
 interface Props {
   indexUrl: string;
@@ -10,6 +11,7 @@ interface Props {
 }
 
 const { indexUrl, indexName, name, version } = Astro.props;
+const dict = useTranslations(toLocale(Astro.currentLocale));
 const spec = name ? (version ? `${name}==${version}` : name) : "<package>";
 
 // For a specific package, pin it to this index via tool.uv.sources (explicit index
@@ -28,7 +30,7 @@ const uid = `tabs-${name ?? "home"}`;
 ---
 
 <div class="surface overflow-hidden" data-tabs>
-  <div class="flex items-center gap-1 border-b border-zinc-200/80 px-2 pt-2 dark:border-white/10" role="tablist" aria-label="Install instructions">
+  <div class="flex items-center gap-1 border-b border-zinc-200/80 px-2 pt-2 dark:border-white/10" role="tablist" aria-label={dict.install.tablist}>
     {
       tabs.map((t, i) => (
         <button
@@ -46,7 +48,7 @@ const uid = `tabs-${name ?? "home"}`;
         </button>
       ))
     }
-    <span class="ml-auto hidden pr-2 text-[11px] text-zinc-400 sm:inline">Index · <span class="font-mono">{indexName}</span></span>
+    <span class="ml-auto hidden pr-2 text-[11px] text-zinc-400 sm:inline">{dict.install.index} · <span class="font-mono">{indexName}</span></span>
   </div>
   {
     tabs.map((t, i) => (

@@ -1,0 +1,31 @@
+---
+import { LOCALES, localeUrl, toLocale, useTranslations } from "../i18n";
+
+interface Props {
+  /** Path inside the locale (see pathWithinLocale); "" links to the other locale's home. */
+  path: string;
+}
+
+const { path } = Astro.props;
+const current = toLocale(Astro.currentLocale);
+const others = LOCALES.filter((l) => l !== current);
+---
+
+{
+  others.map((l) => {
+    const t = useTranslations(l);
+    return (
+      <a
+        href={localeUrl(l, path)}
+        hreflang={l}
+        lang={l}
+        data-lang-switch={l}
+        class="rounded-lg px-2.5 py-1.5 text-[13px] font-medium hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/5 dark:hover:text-white"
+        aria-label={t.lang.switchTo}
+        title={t.lang.switchTo}
+      >
+        {t.lang.name}
+      </a>
+    );
+  })
+}

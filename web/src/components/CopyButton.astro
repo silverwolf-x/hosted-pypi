@@ -1,11 +1,14 @@
 ---
+import { toLocale, useTranslations } from "../i18n";
+
 interface Props {
   /** Text to copy. */
   value: string;
   label?: string;
   class?: string;
 }
-const { value, label = "Copy", class: className = "" } = Astro.props;
+const t = useTranslations(toLocale(Astro.currentLocale));
+const { value, label = t.copy.label, class: className = "" } = Astro.props;
 ---
 
 <button
@@ -26,5 +29,5 @@ const { value, label = "Copy", class: className = "" } = Astro.props;
     <path d="m5 12 5 5L20 7" />
   </svg>
   <span class="group-data-[copied]/copy:hidden">{label}</span>
-  <span class="hidden group-data-[copied]/copy:inline">Copied</span>
+  <span class="hidden group-data-[copied]/copy:inline" aria-live="polite">{t.copy.copied}</span>
 </button>

@@ -2,18 +2,29 @@
 import "@fontsource-variable/inter";
 import "@fontsource-variable/jetbrains-mono";
 import "../styles/global.css";
+import LangSwitch from "../components/LangSwitch.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import { loadIndex, url } from "../lib/data";
+import { DEFAULT_LOCALE, LOCALES, absoluteLocaleUrl, localeUrl, pathWithinLocale, toLocale, useTranslations } from "../i18n";
 
 interface Props {
   title: string;
   description?: string;
+  /**
+   * Whether this page exists in every locale. When false (404), no hreflang
+   * alternates are emitted and the language switcher links to the other home page.
+   */
+  localized?: boolean;
 }
 
-const { title, description = "Self-hosted Python package index backed by GitHub Releases." } = Astro.props;
+const locale = toLocale(Astro.currentLocale);
+const t = useTranslations(locale);
+const { title, description = t.meta.description, localized = true } = Astro.props;
 const data = loadIndex();
 const repoName = data.repo.split("/")[1];
 const canonical = new URL(Astro.url.pathname, Astro.site);
+const path = localized ? pathWithinLocale(Astro.url.pathname) : "";
+const alternates = localized ? LOCALES.map((l) => ({ hreflang: l, href: absoluteLocaleUrl(l, path) })) : [];
 
 // Prerender same-site links on hover: instant navigation without a client router.
 const speculation = JSON.stringify({
@@ -22,16 +33,19 @@ const speculation = JSON.stringify({
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang={locale}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
     <meta name="description" content={description} />
-    <link rel="canonical" href={canonical} />
+    {localized && <link rel="canonical" href={canonical} />}
+    {alternates.map((a) => <link rel="alternate" hreflang={a.hreflang} href={a.href} />)}
+    {localized && <link rel="alternate" hreflang="x-default" href={absoluteLocaleUrl(DEFAULT_LOCALE, path)} />}
     <link rel="icon" href={url("favicon.svg")} type="image/svg+xml" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
+    <meta property="og:locale" content={locale.replace("-", "_")} />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#09090b" media="(prefers-color-scheme: dark)" />
     <script is:inline>
@@ -43,22 +57,24 @@ const speculation = JSON.stringify({
       })();
     </script>
     <script type="speculationrules" set:html={speculation} />
+    <script type="application/json" id="i18n-client" set:html={JSON.stringify(t.client)} />
   </head>
   <body class="relative min-h-dvh font-sans">
     <div class="backdrop pointer-events-none absolute inset-x-0 top-0 -z-10 h-[36rem] text-zinc-900 dark:text-white" aria-hidden="true"></div>
 
     <header class="sticky top-0 z-30 border-b border-zinc-200/70 bg-white/70 backdrop-blur-xl dark:border-white/10 dark:bg-zinc-950/60">
       <nav class="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:px-6">
-        <a href={url()} class="group flex items-center gap-2.5 font-semibold tracking-tight">
+        <a href={localeUrl(locale)} class="group flex items-center gap-2.5 font-semibold tracking-tight" aria-label={`${repoName} · ${t.nav.home}`}>
           <img src={url("favicon.svg")} alt="" width="26" height="26" class="transition group-hover:rotate-6" />
           <span>{repoName}</span>
         </a>
         <div class="ml-auto flex items-center gap-1 text-sm text-zinc-600 dark:text-zinc-400">
-          <a href={url()} class="rounded-lg px-3 py-1.5 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/5 dark:hover:text-white">Packages</a>
-          <a href={url("simple/")} class="hidden rounded-lg px-3 py-1.5 hover:bg-zinc-100 hover:text-zinc-900 sm:block dark:hover:bg-white/5 dark:hover:text-white">Simple API</a>
-          <a href={`https://github.com/${data.repo}`} class="rounded-lg p-2 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/5 dark:hover:text-white" aria-label="GitHub repository">
+          <a href={localeUrl(locale)} class="rounded-lg px-3 py-1.5 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/5 dark:hover:text-white">{t.nav.packages}</a>
+          <a href={url("simple/")} class="hidden rounded-lg px-3 py-1.5 hover:bg-zinc-100 hover:text-zinc-900 sm:block dark:hover:bg-white/5 dark:hover:text-white">{t.nav.simpleApi}</a>
+          <a href={`https://github.com/${data.repo}`} class="rounded-lg p-2 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/5 dark:hover:text-white" aria-label={t.nav.github}>
             <svg viewBox="0 0 16 16" class="size-[18px]" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
           </a>
+          <LangSwitch path={path} />
           <ThemeToggle />
         </div>
       </nav>
@@ -70,7 +86,7 @@ const speculation = JSON.stringify({
 
     <footer class="border-t border-zinc-200/70 py-8 text-center text-xs text-zinc-500 dark:border-white/10">
       <p>
-        Generated <time datetime={data.generated_at} data-relative>{data.generated_at.slice(0, 10)}</time>{" from "}
+        {t.footer.generated} <time datetime={data.generated_at} data-relative>{data.generated_at.slice(0, 10)}</time>{t.footer.from}{" "}
         <a class="underline-offset-2 hover:underline" href={`https://github.com/${data.repo}/releases`}>GitHub Releases</a>{" · "}
         <a class="underline-offset-2 hover:underline" href={url("simple/")}>PEP 503</a>{" · "}
         <a class="underline-offset-2 hover:underline" href={url("packages.json")}>JSON</a>

@@ -73,6 +73,7 @@ extra-index-url = https://<user>.github.io/<repo>/simple/
 - `web/`：Astro + TypeScript + Tailwind CSS v4，纯静态输出；数据来自 `generate_index.py` 生成的 `packages.json`
 - 首页：搜索（`/` 或 `Ctrl+K`）、平台筛选、pip / uv / pyproject / pip.conf 安装命令
 - 包详情页：Python × 平台兼容矩阵、文件 sha256、历史版本页 `packages/<name>/<version>/`
+- 多语言：默认中文（根路径），英文在 `en/` 下；页头可切换，不按浏览器语言自动跳转。文案在 `web/src/i18n/{zh,en}.ts`，`en` 按 `zh` 的键做类型检查
 - 本地预览：
 
 ```bash

@@ -1,8 +1,15 @@
+---
+import { toLocale, useTranslations } from "../i18n";
+
+const t = useTranslations(toLocale(Astro.currentLocale));
+---
+
 <button
   type="button"
   data-theme-toggle
   class="rounded-lg p-2 hover:bg-zinc-100 hover:text-zinc-900 dark:hover:bg-white/5 dark:hover:text-white"
-  aria-label="Toggle color theme"
+  aria-label={t.nav.toggleTheme}
+  title={t.nav.toggleTheme}
 >
   <svg viewBox="0 0 24 24" class="size-[18px] dark:hidden" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
     <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z" />

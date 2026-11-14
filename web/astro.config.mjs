@@ -12,5 +12,12 @@ export default defineConfig({
   base,
   trailingSlash: "always",
   build: { format: "directory" },
+  // Chinese is the default and lives at the root; English under /en/.
+  // Keep in sync with src/i18n/index.ts (LOCALES / DEFAULT_LOCALE).
+  i18n: {
+    locales: ["zh-CN", "en"],
+    defaultLocale: "zh-CN",
+    routing: { prefixDefaultLocale: false },
+  },
   vite: { plugins: [tailwindcss()] },
 });

@@ -60,23 +60,6 @@ export function url(path = ""): string {
   return base + path.replace(/^\//, "");
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let n = bytes / 1024;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i++;
-  }
-  return `${n.toFixed(n < 10 ? 1 : 0)} ${units[i]}`;
-}
-
-export function formatDate(iso: string | null): string {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "UTC" });
-}
-
 export type OsKey = "windows" | "linux" | "macos" | "any";
 
 export interface PlatformInfo {
@@ -85,9 +68,17 @@ export interface PlatformInfo {
   detail: string;
 }
 
+/** Localizable labels for pure-Python wheels (platform tag `any`). */
+export interface AnyPlatformLabels {
+  any: string;
+  pure: string;
+}
+
+const DEFAULT_ANY: AnyPlatformLabels = { any: "Any", pure: "pure Python" };
+
 /** Human label for a wheel platform tag, e.g. manylinux_2_34_x86_64. */
-export function platformInfo(tag: string | undefined): PlatformInfo {
-  if (!tag || tag === "any") return { os: "any", label: "Any", detail: "pure Python" };
+export function platformInfo(tag: string | undefined, anyLabels: AnyPlatformLabels = DEFAULT_ANY): PlatformInfo {
+  if (!tag || tag === "any") return { os: "any", label: anyLabels.any, detail: anyLabels.pure };
   const first = tag.split(".")[0] ?? tag;
   const arch = (s: string) =>
     s.endsWith("amd64") || s.endsWith("x86_64")
@@ -135,18 +126,18 @@ export interface PackageSummary {
   fileCount: number;
 }
 
-export function summarize(version: PackageVersion): PackageSummary {
+export function summarize(version: PackageVersion, anyLabels?: AnyPlatformLabels): PackageSummary {
   const wheels = version.files.filter((f) => f.kind === "wheel");
   const platforms = new Map<string, PlatformInfo>();
   for (const w of wheels) {
-    const p = platformInfo(w.platform);
+    const p = platformInfo(w.platform, anyLabels);
     platforms.set(p.label, p);
   }
   const pythons = [...new Set(wheels.map((w) => w.python ?? ""))]
     .filter(Boolean)
     .sort((a, b) => pythonSortKey(a) - pythonSortKey(b));
   return {
-    platforms: [...platforms.values()].sort((a, b) => a.label.localeCompare(b.label)),
+    platforms: [...platforms.values()].sort((a, b) => a.label.localeCompare(b.label, "en")),
     pythons,
     updated: version.published_at,
     fileCount: version.files.length,

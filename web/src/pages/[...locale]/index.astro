@@ -1,39 +1,44 @@
 ---
-import Base from "../layouts/Base.astro";
-import InstallTabs from "../components/InstallTabs.astro";
-import PackageCard from "../components/PackageCard.astro";
-import OsIcon from "../components/OsIcon.astro";
-import { formatBytes, loadIndex, platformInfo, type OsKey } from "../lib/data";
+import type { GetStaticPaths } from "astro";
+import Base from "../../layouts/Base.astro";
+import InstallTabs from "../../components/InstallTabs.astro";
+import PackageCard from "../../components/PackageCard.astro";
+import OsIcon from "../../components/OsIcon.astro";
+import { loadIndex, platformInfo, type OsKey } from "../../lib/data";
+import { LOCALES, formatBytes, formatNumber, localeParam, toLocale, useTranslations } from "../../i18n";
 
+// One page per locale: `/` (zh-CN) and `/en/`.
+export const getStaticPaths = (() => LOCALES.map((l) => ({ params: { locale: localeParam(l) } }))) satisfies GetStaticPaths;
+
+const locale = toLocale(Astro.currentLocale);
+const t = useTranslations(locale);
 const data = loadIndex();
 const repoName = data.repo.split("/")[1]!;
 const files = data.packages.flatMap((p) => p.versions.flatMap((v) => v.files));
 const stats = [
-  { label: "Packages", value: data.packages.length },
-  { label: "Versions", value: data.packages.reduce((n, p) => n + p.versions.length, 0) },
-  { label: "Wheels", value: files.filter((f) => f.kind === "wheel").length },
-  { label: "Hosted", value: formatBytes(files.reduce((n, f) => n + f.size, 0)) },
+  { label: t.home.stats.packages, value: formatNumber(locale, data.packages.length) },
+  { label: t.home.stats.versions, value: formatNumber(locale, data.packages.reduce((n, p) => n + p.versions.length, 0)) },
+  { label: t.home.stats.wheels, value: formatNumber(locale, files.filter((f) => f.kind === "wheel").length) },
+  { label: t.home.stats.hosted, value: formatBytes(locale, files.reduce((n, f) => n + f.size, 0)) },
 ];
 
-const OS_LABEL: Record<OsKey, string> = { windows: "Windows", linux: "Linux", macos: "macOS", any: "Pure Python" };
-const presentOs = (Object.keys(OS_LABEL) as OsKey[]).filter((os) =>
-  files.some((f) => f.kind === "wheel" && platformInfo(f.platform).os === os),
-);
+const OS_KEYS: OsKey[] = ["windows", "linux", "macos", "any"];
+const presentOs = OS_KEYS.filter((os) => files.some((f) => f.kind === "wheel" && platformInfo(f.platform).os === os));
 ---
 
-<Base title={`${repoName} · Python Package Index`}>
+<Base title={t.meta.homeTitle(repoName)}>
   <section class="pb-12 pt-16 sm:pt-24">
     <div class="mx-auto max-w-3xl text-center">
       <p class="chip mx-auto mb-5 !px-3 !py-1">
         <span class="relative flex size-1.5"><span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span></span>
-        PEP 503 index · served by GitHub Pages
+        {t.home.badge}
       </p>
       <h1 class="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-        Prebuilt wheels,{" "}
-        <span class="bg-gradient-to-r from-brand-500 via-violet-500 to-sky-500 bg-clip-text text-transparent">one index away.</span>
+        {t.home.headline}
+        <span class="bg-gradient-to-r from-brand-500 via-violet-500 to-sky-500 bg-clip-text text-transparent">{t.home.headlineAccent}</span>
       </h1>
       <p class="mx-auto mt-5 max-w-xl text-pretty text-zinc-600 dark:text-zinc-400">
-        Binary packages that are painful to compile — built in CI for Windows and Linux, published as GitHub Releases, installable with pip or uv.
+        {t.home.lead}
       </p>
     </div>
 
@@ -54,26 +59,26 @@ const presentOs = (Object.keys(OS_LABEL) as OsKey[]).filter((os) =>
   <section aria-labelledby="pkgs-heading">
     <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
       <h2 id="pkgs-heading" class="text-lg font-semibold tracking-tight">
-        Packages <span class="ml-1 text-sm font-normal text-zinc-500" data-count>{data.packages.length}</span>
+        {t.home.heading} <span class="ml-1 text-sm font-normal text-zinc-500" data-count>{data.packages.length}</span>
       </h2>
       <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
         {presentOs.length > 1 && (
-          <div class="flex flex-wrap gap-1" role="group" aria-label="Filter by platform">
-            <button type="button" data-os-filter="all" aria-pressed="true" class="chip cursor-pointer !py-1 aria-pressed:border-brand-300 aria-pressed:bg-brand-50 aria-pressed:text-brand-700 dark:aria-pressed:border-brand-400/40 dark:aria-pressed:bg-brand-500/10 dark:aria-pressed:text-brand-300">All</button>
+          <div class="flex flex-wrap gap-1" role="group" aria-label={t.home.filterLabel}>
+            <button type="button" data-os-filter="all" aria-pressed="true" class="chip cursor-pointer !py-1 aria-pressed:border-brand-300 aria-pressed:bg-brand-50 aria-pressed:text-brand-700 dark:aria-pressed:border-brand-400/40 dark:aria-pressed:bg-brand-500/10 dark:aria-pressed:text-brand-300">{t.home.filterAll}</button>
             {presentOs.map((os) => (
               <button type="button" data-os-filter={os} aria-pressed="false" class="chip cursor-pointer !py-1 aria-pressed:border-brand-300 aria-pressed:bg-brand-50 aria-pressed:text-brand-700 dark:aria-pressed:border-brand-400/40 dark:aria-pressed:bg-brand-500/10 dark:aria-pressed:text-brand-300">
-                <OsIcon os={os} />{OS_LABEL[os]}
+                <OsIcon os={os} />{t.os[os]}
               </button>
             ))}
           </div>
         )}
         <label class="relative block sm:w-72">
-          <span class="sr-only">Search packages</span>
+          <span class="sr-only">{t.home.search}</span>
           <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
           <input
             type="search"
             data-search
-            placeholder="Search packages"
+            placeholder={t.home.search}
             autocomplete="off"
             spellcheck="false"
             class="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-10 text-sm shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-white/5"
@@ -88,7 +93,7 @@ const presentOs = (Object.keys(OS_LABEL) as OsKey[]).filter((os) =>
     </div>
 
     <div data-empty hidden class="surface mt-4 border-dashed py-14 text-center text-sm text-zinc-500">
-      No packages match your search.
+      {t.home.empty}
     </div>
   </section>
 </Base>

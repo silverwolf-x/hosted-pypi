@@ -1,8 +1,24 @@
 // Progressive enhancement shared by every page. Pages are fully static and usable
 // without JS; this adds copy buttons, tabs, theme toggle, relative times and search.
 
+import type { Dict } from "../i18n";
+
 const $$ = <T extends Element = HTMLElement>(sel: string, root: ParentNode = document) =>
   Array.from(root.querySelectorAll<T>(sel) as NodeListOf<T>);
+
+// ── i18n ─────────────────────────────────────────────────────────────────
+// Locale comes from <html lang>; strings from the JSON block rendered by Base.astro
+// (Dict["client"] in src/i18n/zh.ts).
+const lang = document.documentElement.lang || "zh-CN";
+const strings: Partial<Dict["client"]> = JSON.parse(document.getElementById("i18n-client")?.textContent || "{}");
+const format = (key: keyof Dict["client"], vars: Record<string, string | number>) =>
+  (strings[key] ?? "").replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
+
+// Remember the explicit language choice. This is only a preference record — the
+// site never auto-redirects (static pages, no flash); Chinese stays the default.
+for (const a of $$<HTMLAnchorElement>("[data-lang-switch]")) {
+  a.addEventListener("click", () => localStorage.setItem("lang", a.dataset.langSwitch!));
+}
 
 // ── Theme ────────────────────────────────────────────────────────────────
 for (const btn of $$("[data-theme-toggle]")) {
@@ -61,14 +77,14 @@ for (const root of $$("[data-tabs]")) {
 }
 
 // ── Relative times ───────────────────────────────────────────────────────
-const rtf = new Intl.RelativeTimeFormat(navigator.language, { numeric: "auto" });
+const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
   ["year", 31536e6], ["month", 2592e6], ["week", 6048e5], ["day", 864e5], ["hour", 36e5], ["minute", 6e4],
 ];
 for (const el of $$<HTMLTimeElement>("time[data-relative]")) {
   const diff = new Date(el.dateTime).getTime() - Date.now();
   const [unit, ms] = UNITS.find(([, ms]) => Math.abs(diff) >= ms) ?? ["minute", 6e4];
-  el.title = new Date(el.dateTime).toLocaleString();
+  el.title = new Date(el.dateTime).toLocaleString(lang);
   el.textContent = rtf.format(Math.round(diff / ms), unit);
 }
 
@@ -89,7 +105,7 @@ if (search) {
       c.hidden = !ok;
       if (ok) shown++;
     }
-    if (counter) counter.textContent = q || os !== "all" ? `${shown} of ${cards.length}` : String(cards.length);
+    if (counter) counter.textContent = q || os !== "all" ? format("count", { shown, total: cards.length }) : String(cards.length);
     if (empty) empty.hidden = shown > 0;
     const params = new URLSearchParams(location.search);
     q ? params.set("q", q) : params.delete("q");

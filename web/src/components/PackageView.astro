@@ -3,8 +3,6 @@ import CopyButton from "./CopyButton.astro";
 import InstallTabs from "./InstallTabs.astro";
 import OsIcon from "./OsIcon.astro";
 import {
-  formatBytes,
-  formatDate,
   loadIndex,
   platformInfo,
   pythonLabel,
@@ -15,6 +13,7 @@ import {
   type PackageFile,
   type PackageVersion,
 } from "../lib/data";
+import { formatBytes as fmtBytes, formatDate as fmtDate, localeUrl, toLocale, useTranslations } from "../i18n";
 
 interface Props {
   pkg: Package;
@@ -22,25 +21,30 @@ interface Props {
 }
 
 const { pkg, version } = Astro.props;
+const locale = toLocale(Astro.currentLocale);
+const t = useTranslations(locale);
+const formatBytes = (n: number) => fmtBytes(locale, n);
+const formatDate = (iso: string | null) => fmtDate(locale, iso);
+const pageUrl = (path = "") => localeUrl(locale, path);
 const data = loadIndex();
 const repoName = data.repo.split("/")[1]!;
 const isLatest = version.version === pkg.latest;
-const s = summarize(version);
+const s = summarize(version, t.platform);
 const wheels = version.files.filter((f) => f.kind === "wheel");
 const sdists = version.files.filter((f) => f.kind === "sdist");
 
 // Compatibility matrix: Python tag × platform label → wheel
 const pythons = [...new Set(wheels.map((w) => w.python!))].sort((a, b) => pythonSortKey(b) - pythonSortKey(a));
 const matrix = new Map<string, PackageFile>();
-for (const w of wheels) matrix.set(`${w.python}|${platformInfo(w.platform).label}`, w);
+for (const w of wheels) matrix.set(`${w.python}|${platformInfo(w.platform, t.platform).label}`, w);
 const totalSize = version.files.reduce((n, f) => n + f.size, 0);
 ---
 
-<nav class="pt-8 text-sm text-zinc-500" aria-label="Breadcrumb">
+<nav class="pt-8 text-sm text-zinc-500" aria-label={t.pkg.breadcrumb}>
   <ol class="flex items-center gap-1.5">
-    <li><a href={url()} class="hover:text-zinc-900 dark:hover:text-white">Packages</a></li>
+    <li><a href={pageUrl()} class="hover:text-zinc-900 dark:hover:text-white">{t.nav.packages}</a></li>
     <li aria-hidden="true">/</li>
-    <li><a href={url(`packages/${pkg.name}/`)} class="hover:text-zinc-900 dark:hover:text-white">{pkg.name}</a></li>
+    <li><a href={pageUrl(`packages/${pkg.name}/`)} class="hover:text-zinc-900 dark:hover:text-white">{pkg.name}</a></li>
     {!isLatest && (<><li aria-hidden="true">/</li><li class="text-zinc-900 dark:text-zinc-100" aria-current="page">{version.version}</li></>)}
   </ol>
 </nav>
@@ -50,46 +54,46 @@ const totalSize = version.files.reduce((n, f) => n + f.size, 0);
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="font-mono text-3xl font-semibold tracking-tight sm:text-4xl" style={`view-transition-name: pkg-${pkg.name}`}>{pkg.name}</h1>
       <span class="rounded-full bg-brand-50 px-3 py-1 font-mono text-sm font-medium text-brand-700 ring-1 ring-brand-100 dark:bg-brand-500/10 dark:text-brand-300 dark:ring-brand-500/20">v{version.version}</span>
-      {isLatest && <span class="chip !border-emerald-200 !bg-emerald-50 !text-emerald-700 dark:!border-emerald-500/20 dark:!bg-emerald-500/10 dark:!text-emerald-300">latest</span>}
+      {isLatest && <span class="chip !border-emerald-200 !bg-emerald-50 !text-emerald-700 dark:!border-emerald-500/20 dark:!bg-emerald-500/10 dark:!text-emerald-300">{t.pkg.latest}</span>}
     </div>
     <p class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-zinc-500">
-      <span>Published {version.published_at ? <time datetime={version.published_at} data-relative>{formatDate(version.published_at)}</time> : "—"}</span>
-      <span>{version.files.length} files · {formatBytes(totalSize)}</span>
+      <span>{t.pkg.published} {version.published_at ? <time datetime={version.published_at} data-relative>{formatDate(version.published_at)}</time> : "—"}</span>
+      <span>{t.pkg.files(version.files.length)} · {formatBytes(totalSize)}</span>
       {s.pythons.length > 0 && <span>Python {s.pythons.map(pythonLabel).join(", ")}</span>}
     </p>
   </div>
   <div class="flex gap-2">
     {version.release_url && (
       <a href={version.release_url} class="inline-flex items-center gap-1.5 rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium shadow-sm transition hover:border-zinc-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20">
-        Release <span class="font-mono text-xs text-zinc-500">{version.release_tag}</span>
+        {t.pkg.release} <span class="font-mono text-xs text-zinc-500">{version.release_tag}</span>
       </a>
     )}
-    <a href={url(`simple/${pkg.name}/`)} class="inline-flex items-center rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium shadow-sm transition hover:border-zinc-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20">Simple</a>
+    <a href={url(`simple/${pkg.name}/`)} class="inline-flex items-center rounded-xl border border-zinc-200 bg-white px-3.5 py-2 text-sm font-medium shadow-sm transition hover:border-zinc-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-white/20">{t.pkg.simple}</a>
   </div>
 </header>
 
 {!isLatest && (
   <div class="mb-6 flex items-center gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-200">
     <svg viewBox="0 0 24 24" class="size-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></svg>
-    <span>This is not the latest release. <a class="font-medium underline underline-offset-2" href={url(`packages/${pkg.name}/`)}>View v{pkg.latest}</a></span>
+    <span>{t.pkg.notLatest} <a class="font-medium underline underline-offset-2" href={pageUrl(`packages/${pkg.name}/`)}>{t.pkg.viewLatest(pkg.latest)}</a></span>
   </div>
 )}
 
 <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_16rem]">
   <div class="flex min-w-0 flex-col gap-8">
     <section aria-labelledby="install-h">
-      <h2 id="install-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Install</h2>
+      <h2 id="install-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">{t.pkg.install}</h2>
       <InstallTabs indexUrl={data.index_url} indexName={repoName} name={pkg.name} version={version.version} />
     </section>
 
     {wheels.length > 0 && (
       <section aria-labelledby="compat-h">
-        <h2 id="compat-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Compatibility</h2>
+        <h2 id="compat-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">{t.pkg.compat}</h2>
         <div class="surface overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
               <tr class="border-b border-zinc-200/80 dark:border-white/10">
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500">Python</th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500">{t.card.python}</th>
                 {s.platforms.map((p) => (
                   <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-zinc-500">
                     <span class="inline-flex items-center gap-1.5"><OsIcon os={p.os} class="size-3.5" />{p.label}</span>
@@ -110,10 +114,10 @@ const totalSize = version.files.reduce((n, f) => n + f.size, 0);
                           <a href={w.url} class="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 -mx-2 text-emerald-700 transition hover:bg-emerald-50 dark:text-emerald-400 dark:hover:bg-emerald-500/10" title={w.filename}>
                             <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 5 5L20 7" /></svg>
                             <span class="tabular-nums text-xs text-zinc-500 group-hover:text-emerald-700 dark:group-hover:text-emerald-300">{formatBytes(w.size)}</span>
-                            <span class="sr-only">Download {w.filename}</span>
+                            <span class="sr-only">{t.pkg.downloadFile(w.filename)}</span>
                           </a>
                         ) : (
-                          <span class="text-zinc-300 dark:text-zinc-700" aria-label="not available">—</span>
+                          <span class="text-zinc-300 dark:text-zinc-700" aria-label={t.pkg.notAvailable}>—</span>
                         )}
                       </td>
                     );
@@ -127,10 +131,10 @@ const totalSize = version.files.reduce((n, f) => n + f.size, 0);
     )}
 
     <section aria-labelledby="files-h">
-      <h2 id="files-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Files</h2>
+      <h2 id="files-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">{t.pkg.filesHeading}</h2>
       <ul class="surface divide-y divide-zinc-100 dark:divide-white/5">
         {[...wheels, ...sdists].map((f) => {
-          const p = platformInfo(f.platform);
+          const p = platformInfo(f.platform, t.platform);
           return (
             <li class="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:gap-4">
               <div class="min-w-0 flex-1">
@@ -143,16 +147,16 @@ const totalSize = version.files.reduce((n, f) => n + f.size, 0);
                       {f.abi !== f.python && <span class="chip font-mono">{f.abi}</span>}
                     </>
                   ) : (
-                    <span class="chip">source</span>
+                    <span class="chip">{t.pkg.source}</span>
                   )}
                   <span class="tabular-nums">{formatBytes(f.size)}</span>
                 </div>
               </div>
               <div class="flex shrink-0 items-center gap-2">
                 {f.sha256 && <CopyButton value={f.sha256} label={`sha256 ${f.sha256.slice(0, 8)}`} class="font-mono" />}
-                <a href={f.url} class="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200" aria-label={`Download ${f.filename}`}>
+                <a href={f.url} class="inline-flex items-center gap-1.5 rounded-lg bg-zinc-900 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200" aria-label={t.pkg.downloadFile(f.filename)}>
                   <svg viewBox="0 0 24 24" class="size-3.5" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14" /></svg>
-                  Download
+                  {t.pkg.download}
                 </a>
               </div>
             </li>
@@ -164,11 +168,11 @@ const totalSize = version.files.reduce((n, f) => n + f.size, 0);
 
   <aside class="flex flex-col gap-6 lg:sticky lg:top-20 lg:self-start">
     <section aria-labelledby="versions-h">
-      <h2 id="versions-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Versions</h2>
+      <h2 id="versions-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">{t.pkg.versionsHeading}</h2>
       <ol class="surface max-h-96 overflow-y-auto p-1.5">
         {pkg.versions.map((v) => {
           const current = v.version === version.version;
-          const href = v.version === pkg.latest ? url(`packages/${pkg.name}/`) : url(`packages/${pkg.name}/${v.version}/`);
+          const href = pageUrl(v.version === pkg.latest ? `packages/${pkg.name}/` : `packages/${pkg.name}/${v.version}/`);
           return (
             <li>
               <a href={href} aria-current={current ? "page" : undefined} class="flex items-center justify-between rounded-lg px-3 py-2 text-sm transition hover:bg-zinc-100 aria-[current=page]:bg-brand-50 aria-[current=page]:text-brand-700 dark:hover:bg-white/5 dark:aria-[current=page]:bg-brand-500/10 dark:aria-[current=page]:text-brand-300">
@@ -182,11 +186,11 @@ const totalSize = version.files.reduce((n, f) => n + f.size, 0);
     </section>
 
     <section aria-labelledby="meta-h" class="text-sm">
-      <h2 id="meta-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Links</h2>
+      <h2 id="meta-h" class="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">{t.pkg.links}</h2>
       <ul class="flex flex-col gap-2 text-zinc-600 dark:text-zinc-400">
-        <li><a class="hover:text-brand-600 dark:hover:text-brand-300" href={`https://pypi.org/project/${pkg.name}/`}>Upstream on PyPI ↗</a></li>
-        <li><a class="hover:text-brand-600 dark:hover:text-brand-300" href={`https://github.com/${data.repo}/releases?q=${encodeURIComponent(pkg.name)}`}>All releases ↗</a></li>
-        <li><a class="hover:text-brand-600 dark:hover:text-brand-300" href={url(`simple/${pkg.name}/`)}>Simple index page</a></li>
+        <li><a class="hover:text-brand-600 dark:hover:text-brand-300" href={`https://pypi.org/project/${pkg.name}/`}>{t.pkg.upstream}</a></li>
+        <li><a class="hover:text-brand-600 dark:hover:text-brand-300" href={`https://github.com/${data.repo}/releases?q=${encodeURIComponent(pkg.name)}`}>{t.pkg.allReleases}</a></li>
+        <li><a class="hover:text-brand-600 dark:hover:text-brand-300" href={url(`simple/${pkg.name}/`)}>{t.pkg.simplePage}</a></li>
       </ul>
     </section>
   </aside>

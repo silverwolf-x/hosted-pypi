@@ -1,19 +1,22 @@
 ---
 import OsIcon from "./OsIcon.astro";
-import { pythonLabel, summarize, url, type Package } from "../lib/data";
+import { pythonLabel, summarize, type Package } from "../lib/data";
+import { localeUrl, toLocale, useTranslations } from "../i18n";
 
 interface Props {
   pkg: Package;
 }
 const { pkg } = Astro.props;
+const locale = toLocale(Astro.currentLocale);
+const t = useTranslations(locale);
 const latest = pkg.versions[0]!;
-const s = summarize(latest);
+const s = summarize(latest, t.platform);
 const py = s.pythons.length > 1 ? `${pythonLabel(s.pythons[0])} – ${pythonLabel(s.pythons.at(-1))}` : pythonLabel(s.pythons[0]);
 const osKeys = [...new Set(s.platforms.map((p) => p.os))].join(" ");
 ---
 
 <a
-  href={url(`packages/${pkg.name}/`)}
+  href={localeUrl(locale, `packages/${pkg.name}/`)}
   data-pkg={pkg.name}
   data-os={osKeys}
   class="surface group relative flex flex-col gap-4 p-5 transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-lg hover:shadow-brand-500/5 dark:hover:border-brand-400/40"
@@ -33,15 +36,15 @@ const osKeys = [...new Set(s.platforms.map((p) => p.os))].join(" ");
 
   <dl class="mt-auto grid grid-cols-3 gap-2 border-t border-zinc-100 pt-3 text-xs dark:border-white/5">
     <div>
-      <dt class="text-zinc-500">Python</dt>
+      <dt class="text-zinc-500">{t.card.python}</dt>
       <dd class="mt-0.5 font-medium">{py}</dd>
     </div>
     <div>
-      <dt class="text-zinc-500">Versions</dt>
+      <dt class="text-zinc-500">{t.card.versions}</dt>
       <dd class="mt-0.5 font-medium">{pkg.versions.length}</dd>
     </div>
     <div>
-      <dt class="text-zinc-500">Updated</dt>
+      <dt class="text-zinc-500">{t.card.updated}</dt>
       <dd class="mt-0.5 font-medium">
         {s.updated ? <time datetime={s.updated} data-relative>{s.updated.slice(0, 10)}</time> : "—"}
       </dd>
