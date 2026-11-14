@@ -21,6 +21,9 @@ permissions:
   pages: write
   id-token: write
 
+# 所有 Pages 部署串行执行（不取消进行中的部署）。
+# 组名必须与调用方不同（talib.yml: talib-build，update-versions.yml: update-versions），
+# 否则被调用 workflow 与调用方争用同一组会死锁。
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -32,7 +35,13 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # 始终检出默认分支最新提交，而不是 github.sha：
+      # 被 talib.yml / build-*.yml 以 workflow_call 调用时 github.sha 是调用方（可能很旧）
+      # 的 commit，长时间构建结束后会用旧版 web/ 覆盖较新的部署。
+      # 索引数据来自 Releases API，与触发 commit 无关。
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch || 'main' }}
 
       - uses: actions/setup-python@v7
         with:
