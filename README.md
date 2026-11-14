@@ -16,9 +16,9 @@
 - `build-a.yml`：纯 Python 包示例
 - `build-b.yml`：编译包示例
 - `build-external-template.yml`：外部构建模板
-- `talib.yml`：TA-Lib 专用构建
-- `update-index.yml`：扫描 Release，更新 Pages 索引
-- `update-versions.yml`：更新 `.github/.env` 中的 TA-Lib / Python 构建变量
+- `talib.yml`：TA-Lib 专用构建（可被 `update-versions.yml` 调用）
+- `update-index.yml`：扫描 Release，生成 PEP 503 索引 + `packages.json`，构建 `web/` 前端并部署 Pages
+- `update-versions.yml`：每周检查上游版本，有变化就直接提交 `.github/.env` 并立即构建发布 TA-Lib
 - `cleanup-legacy-releases.yml`：一次性清掉历史遗留的非版本化 tag / Release（如 `a`、`b`、`talib`、`*-latest`）
 
 ## 快速使用
@@ -59,17 +59,31 @@ extra-index-url = https://<user>.github.io/<repo>/simple/
 - 仓库 Settings → Pages → Source 选 `GitHub Actions`
 - 如果 `github-pages` environment 要审批，去掉 Required reviewers
 
-## Token 规则
+## TA-Lib 自动更新
 
-- `update-versions.yml` 使用 `peter-evans/create-pull-request@v8` 发 PR
-- 默认走 `GITHUB_TOKEN`
-- 仓库如果禁用了 GitHub Actions 创建 PR，要去 Settings → Actions → General 打开 `Allow GitHub Actions to create and approve pull requests`
-- `UPDATE_VERSIONS_TOKEN` 现在只是可选 override，可用 fine-grained PAT 或 GitHub App token，权限为 `contents:write`、`pull-requests:write`
+- 每周一 `update-versions.yml` 拉取 PyPI / ta-lib C 库 / Python / manylinux 最新版本
+- 有变化：直接 commit `.github/.env` 到 `main`，同一次运行内调用 `talib.yml` 构建 → Release → 更新 Pages
+- 不再走 PR：之前 PR 需要人工合并，且 `talib.yml` 的 push 触发器监听的是不存在的 `dev` 分支，所以新版本一直没构建
+- 手动强制重建：运行 `Update Versions` 时勾选 `force_build`，或直接运行 `Build TA-Lib Wheels`
+- 只用默认 `GITHUB_TOKEN`，不需要额外 secret；`main` 如果加了分支保护，需要允许 GitHub Actions 推送
+
+## 前端
+
+- `web/`：Astro + TypeScript + Tailwind CSS v4，纯静态输出；数据来自 `generate_index.py` 生成的 `packages.json`
+- 首页：搜索（`/` 或 `Ctrl+K`）、平台筛选、pip / uv / pyproject / pip.conf 安装命令
+- 包详情页：Python × 平台兼容矩阵、文件 sha256、历史版本页 `packages/<name>/<version>/`
+- 本地预览：
+
+```bash
+GITHUB_REPOSITORY=<user>/<repo> GITHUB_TOKEN=$(gh auth token) python .github/scripts/generate_index.py
+cd web && npm ci && npm run dev
+```
 
 ## Dependabot 规则
 
 - Dependabot 只负责 workflow 里显式写死的 action 版本
 - 它不负责 `TALIB_PY_VER`、`TALIB_C_VER`、`CIBW_BUILD`，因为这些值在 `.github/.env`，由 `update-versions.yml` 维护
+- `web/` 的 npm 依赖每周一次合并为一个 PR
 - `actions/github-script@v7` 是 Node 20 runtime，所以会出现 Node 20 deprecated 警告
 - 现在已经改到 `actions/github-script@v8`，Node 24 runtime
 - Dependabot 现在改成每天检查 GitHub Actions；minor/patch 合并，major 单独开 PR，避免大版本升级被埋掉
@@ -78,7 +92,7 @@ extra-index-url = https://<user>.github.io/<repo>/simple/
 
 - 索引没更新：手动跑 `Update PyPI Index`
 - 旧 tag 还在：手动跑 `Cleanup Legacy Releases`
-- `Create Pull Request` 被拒：先检查仓库是否开启了 GitHub Actions 创建 PR；需要时再补 `UPDATE_VERSIONS_TOKEN`
+- `Update Versions` 推送失败：检查 `main` 分支保护是否允许 GitHub Actions 推送
 - Pages 404：Pages Source 没设成 `GitHub Actions`
 
 ## License

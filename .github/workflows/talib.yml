@@ -6,14 +6,31 @@ name: Build TA-Lib Wheels
 #   TALIB_C_VER  — TA-Lib C 库版本（GitHub Releases）
 #   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
 #   CIBW_MANYLINUX_X86_64_IMAGE — manylinux x86_64 镜像版本（pypa/manylinux）
+#
+# 触发方式：
+#   - workflow_call：update-versions.yml 提交新 .env 后直接调用（主路径）。
+#     GITHUB_TOKEN 的 push 不会触发其他 workflow，所以不能依赖下面的 push 触发器。
+#     被调用时 github.sha 仍是调用方的旧 commit，必须用 inputs.ref 检出新 .env。
+#   - push：人工修改 main 上的 .env / 本文件时重建。
+#   - workflow_dispatch：手动重建。
 # ──────────────────────────────────────────────────────────────────────────────
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - ".github/workflows/talib.yml"
-      - ".github/.env"          # .env 版本更新后触发 wheel 重建（直推或合并 PR）
+      - ".github/.env"
+  workflow_call:
+    inputs:
+      ref:
+        description: "要构建的 commit SHA（包含最新 .env）"
+        required: false
+        type: string
   workflow_dispatch:
+
+concurrency:
+  group: talib-build
+  cancel-in-progress: false
 
 env:
   # 版本变量由 .github/.env 在各 job 第一步加载，此处只保留静态 cibuildwheel 配置
@@ -44,6 +61,8 @@ jobs:
         PIP_NO_BUILD_ISOLATION=false
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Load versions from .env
         shell: bash
@@ -84,6 +103,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Load versions from .env
         run: cat .github/.env >> "$GITHUB_ENV"
@@ -128,6 +149,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Load versions from .env
         run: cat .github/.env >> "$GITHUB_ENV"
@@ -169,7 +192,7 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ format('talib-v{0}', env.TALIB_PY_VER) }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ inputs.ref || github.sha }}
           name: "${{ format('talib-v{0}', env.TALIB_PY_VER) }}"
           overwrite_files: true
           files: |

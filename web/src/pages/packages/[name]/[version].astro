@@ -1,0 +1,20 @@
+---
+import type { GetStaticPaths } from "astro";
+import Base from "../../../layouts/Base.astro";
+import PackageView from "../../../components/PackageView.astro";
+import { loadIndex, type Package, type PackageVersion } from "../../../lib/data";
+
+export const getStaticPaths = (() =>
+  loadIndex().packages.flatMap((pkg) =>
+    pkg.versions.map((version) => ({
+      params: { name: pkg.name, version: version.version },
+      props: { pkg, version },
+    })),
+  )) satisfies GetStaticPaths;
+
+const { pkg, version } = Astro.props as { pkg: Package; version: PackageVersion };
+---
+
+<Base title={`${pkg.name} ${version.version} · wheels`} description={`Prebuilt ${pkg.name} ${version.version} wheels.`}>
+  <PackageView pkg={pkg} version={version} />
+</Base>

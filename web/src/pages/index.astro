@@ -1,0 +1,94 @@
+---
+import Base from "../layouts/Base.astro";
+import InstallTabs from "../components/InstallTabs.astro";
+import PackageCard from "../components/PackageCard.astro";
+import OsIcon from "../components/OsIcon.astro";
+import { formatBytes, loadIndex, platformInfo, type OsKey } from "../lib/data";
+
+const data = loadIndex();
+const repoName = data.repo.split("/")[1]!;
+const files = data.packages.flatMap((p) => p.versions.flatMap((v) => v.files));
+const stats = [
+  { label: "Packages", value: data.packages.length },
+  { label: "Versions", value: data.packages.reduce((n, p) => n + p.versions.length, 0) },
+  { label: "Wheels", value: files.filter((f) => f.kind === "wheel").length },
+  { label: "Hosted", value: formatBytes(files.reduce((n, f) => n + f.size, 0)) },
+];
+
+const OS_LABEL: Record<OsKey, string> = { windows: "Windows", linux: "Linux", macos: "macOS", any: "Pure Python" };
+const presentOs = (Object.keys(OS_LABEL) as OsKey[]).filter((os) =>
+  files.some((f) => f.kind === "wheel" && platformInfo(f.platform).os === os),
+);
+---
+
+<Base title={`${repoName} · Python Package Index`}>
+  <section class="pb-12 pt-16 sm:pt-24">
+    <div class="mx-auto max-w-3xl text-center">
+      <p class="chip mx-auto mb-5 !px-3 !py-1">
+        <span class="relative flex size-1.5"><span class="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75"></span><span class="relative inline-flex size-1.5 rounded-full bg-emerald-500"></span></span>
+        PEP 503 index · served by GitHub Pages
+      </p>
+      <h1 class="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
+        Prebuilt wheels,{" "}
+        <span class="bg-gradient-to-r from-brand-500 via-violet-500 to-sky-500 bg-clip-text text-transparent">one index away.</span>
+      </h1>
+      <p class="mx-auto mt-5 max-w-xl text-pretty text-zinc-600 dark:text-zinc-400">
+        Binary packages that are painful to compile — built in CI for Windows and Linux, published as GitHub Releases, installable with pip or uv.
+      </p>
+    </div>
+
+    <dl class="mx-auto mt-10 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4">
+      {stats.map((s) => (
+        <div class="surface px-4 py-3 text-center">
+          <dt class="text-xs text-zinc-500">{s.label}</dt>
+          <dd class="mt-1 text-xl font-semibold tabular-nums tracking-tight">{s.value}</dd>
+        </div>
+      ))}
+    </dl>
+
+    <div class="mx-auto mt-8 max-w-3xl">
+      <InstallTabs indexUrl={data.index_url} indexName={repoName} />
+    </div>
+  </section>
+
+  <section aria-labelledby="pkgs-heading">
+    <div class="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center">
+      <h2 id="pkgs-heading" class="text-lg font-semibold tracking-tight">
+        Packages <span class="ml-1 text-sm font-normal text-zinc-500" data-count>{data.packages.length}</span>
+      </h2>
+      <div class="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+        {presentOs.length > 1 && (
+          <div class="flex flex-wrap gap-1" role="group" aria-label="Filter by platform">
+            <button type="button" data-os-filter="all" aria-pressed="true" class="chip cursor-pointer !py-1 aria-pressed:border-brand-300 aria-pressed:bg-brand-50 aria-pressed:text-brand-700 dark:aria-pressed:border-brand-400/40 dark:aria-pressed:bg-brand-500/10 dark:aria-pressed:text-brand-300">All</button>
+            {presentOs.map((os) => (
+              <button type="button" data-os-filter={os} aria-pressed="false" class="chip cursor-pointer !py-1 aria-pressed:border-brand-300 aria-pressed:bg-brand-50 aria-pressed:text-brand-700 dark:aria-pressed:border-brand-400/40 dark:aria-pressed:bg-brand-500/10 dark:aria-pressed:text-brand-300">
+                <OsIcon os={os} />{OS_LABEL[os]}
+              </button>
+            ))}
+          </div>
+        )}
+        <label class="relative block sm:w-72">
+          <span class="sr-only">Search packages</span>
+          <svg viewBox="0 0 24 24" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+          <input
+            type="search"
+            data-search
+            placeholder="Search packages"
+            autocomplete="off"
+            spellcheck="false"
+            class="w-full rounded-xl border border-zinc-200 bg-white py-2 pl-9 pr-10 text-sm shadow-sm outline-none transition placeholder:text-zinc-400 focus:border-brand-400 focus:ring-4 focus:ring-brand-500/15 dark:border-white/10 dark:bg-white/5"
+          />
+          <kbd class="kbd pointer-events-none absolute right-3 top-1/2 -translate-y-1/2">/</kbd>
+        </label>
+      </div>
+    </div>
+
+    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {data.packages.map((pkg) => <PackageCard pkg={pkg} />)}
+    </div>
+
+    <div data-empty hidden class="surface mt-4 border-dashed py-14 text-center text-sm text-zinc-500">
+      No packages match your search.
+    </div>
+  </section>
+</Base>

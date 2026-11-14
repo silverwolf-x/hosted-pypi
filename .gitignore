@@ -12,3 +12,10 @@ site/
 wheelhouse/
 reference/
 AGENTS.md
+.claude/
+.trellis/
+web/node_modules/
+web/dist/
+web/.astro/
+.preview/
+.shots/

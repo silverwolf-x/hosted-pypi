@@ -18,3 +18,17 @@ updates:
         update-types:
           - minor
           - patch
+
+  # web/ 前端（Astro + Tailwind）：每周一次，全部合并为一个 PR。
+  - package-ecosystem: "npm"
+    directory: "/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 3
+    groups:
+      web:
+        patterns:
+          - "*"

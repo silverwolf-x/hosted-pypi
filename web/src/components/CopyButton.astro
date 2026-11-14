@@ -1,0 +1,30 @@
+---
+interface Props {
+  /** Text to copy. */
+  value: string;
+  label?: string;
+  class?: string;
+}
+const { value, label = "Copy", class: className = "" } = Astro.props;
+---
+
+<button
+  type="button"
+  data-copy={value}
+  class:list={[
+    "group/copy inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition",
+    "hover:border-zinc-300 hover:text-zinc-900 data-[copied]:border-emerald-300 data-[copied]:text-emerald-600",
+    "dark:border-white/10 dark:bg-white/5 dark:text-zinc-300 dark:hover:border-white/20 dark:hover:text-white dark:data-[copied]:border-emerald-500/40 dark:data-[copied]:text-emerald-400",
+    className,
+  ]}
+  aria-label={`${label}: ${value}`}
+>
+  <svg viewBox="0 0 24 24" class="size-3.5 group-data-[copied]/copy:hidden" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+    <rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" />
+  </svg>
+  <svg viewBox="0 0 24 24" class="hidden size-3.5 group-data-[copied]/copy:block" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+    <path d="m5 12 5 5L20 7" />
+  </svg>
+  <span class="group-data-[copied]/copy:hidden">{label}</span>
+  <span class="hidden group-data-[copied]/copy:inline">Copied</span>
+</button>

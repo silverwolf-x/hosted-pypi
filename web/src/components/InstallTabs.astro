@@ -1,0 +1,59 @@
+---
+import CopyButton from "./CopyButton.astro";
+
+interface Props {
+  indexUrl: string;
+  indexName: string;
+  /** Package name; omitted on the home page. */
+  name?: string;
+  version?: string;
+}
+
+const { indexUrl, indexName, name, version } = Astro.props;
+const spec = name ? (version ? `${name}==${version}` : name) : "<package>";
+
+// For a specific package, pin it to this index via tool.uv.sources (explicit index
+// avoids dependency confusion with a same-named package on PyPI).
+const pyproject = name
+  ? `[[tool.uv.index]]\nname = "${indexName}"\nurl = "${indexUrl}"\nexplicit = true\n\n[tool.uv.sources]\n${name} = { index = "${indexName}" }`
+  : `[[tool.uv.index]]\nname = "${indexName}"\nurl = "${indexUrl}"`;
+
+const tabs = [
+  { id: "pip", label: "pip", lang: "shell", code: `pip install ${spec} --extra-index-url ${indexUrl}` },
+  { id: "uv", label: "uv", lang: "shell", code: `uv pip install ${spec} --extra-index-url ${indexUrl}` },
+  { id: "pyproject", label: "pyproject.toml", lang: "toml", code: pyproject },
+  { id: "pipconf", label: "pip.conf", lang: "ini", code: `[global]\nextra-index-url = ${indexUrl}` },
+];
+const uid = `tabs-${name ?? "home"}`;
+---
+
+<div class="surface overflow-hidden" data-tabs>
+  <div class="flex items-center gap-1 border-b border-zinc-200/80 px-2 pt-2 dark:border-white/10" role="tablist" aria-label="Install instructions">
+    {
+      tabs.map((t, i) => (
+        <button
+          type="button"
+          role="tab"
+          id={`${uid}-${t.id}-tab`}
+          aria-controls={`${uid}-${t.id}`}
+          aria-selected={i === 0 ? "true" : "false"}
+          tabindex={i === 0 ? 0 : -1}
+          data-tab={t.id}
+          class="relative rounded-t-lg px-3 pb-2.5 pt-1.5 text-xs font-medium text-zinc-500 transition hover:text-zinc-900 aria-selected:text-zinc-900 dark:hover:text-white dark:aria-selected:text-white
+            after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:bg-brand-500 after:opacity-0 aria-selected:after:opacity-100"
+        >
+          {t.label}
+        </button>
+      ))
+    }
+    <span class="ml-auto hidden pr-2 text-[11px] text-zinc-400 sm:inline">Index · <span class="font-mono">{indexName}</span></span>
+  </div>
+  {
+    tabs.map((t, i) => (
+      <div role="tabpanel" id={`${uid}-${t.id}`} aria-labelledby={`${uid}-${t.id}-tab`} data-panel={t.id} hidden={i !== 0} class="flex items-start gap-3 p-4">
+        <pre class="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere] font-mono text-[13px] leading-6 text-zinc-800 dark:text-zinc-200"><code>{t.lang === "shell" ? <span class="select-none text-brand-500">$ </span> : null}{t.code}</code></pre>
+        <CopyButton value={t.code} />
+      </div>
+    ))
+  }
+</div>

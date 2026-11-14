@@ -5,23 +5,37 @@ name: Update Versions
 #   TALIB_C_VER  — TA-Lib C 库（GitHub Releases，Dependabot 不支持此类追踪）
 #   CIBW_BUILD   — 最新 3 个 CPython 稳定版本（endoflife.date）
 #   CIBW_MANYLINUX_X86_64_IMAGE — manylinux x86_64 镜像（pypa/manylinux）
-# create-pull-request 是治本方案：默认使用 GITHUB_TOKEN 创建/更新 PR。
-# 如果仓库关闭了 “Allow GitHub Actions to create and approve pull requests”，
-# 需要在仓库设置开启；`UPDATE_VERSIONS_TOKEN` 仅作为可选 override。
+#
+# 流程：检测到变化 → 直接提交 .env 到默认分支 → 同一次运行内调用 talib.yml 构建发布。
+# 不走 PR：PR 需要人工合并，曾导致新版本长期不构建。
+# 不依赖 talib.yml 的 push 触发器：GITHUB_TOKEN 推送的 commit 不会触发其他 workflow。
 on:
   schedule:
     - cron: "0 9 * * 1"   # 每周一 09:00 UTC
-  workflow_dispatch:        # 支持手动触发
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: "版本无变化也强制重建 TA-Lib"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
-  pull-requests: write
+
+concurrency:
+  group: update-versions
+  cancel-in-progress: false
 
 jobs:
   update-versions:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.update.outputs.changed }}
+      sha: ${{ steps.commit.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
 
       - uses: actions/setup-python@v7
         with:
@@ -128,42 +142,30 @@ jobs:
               % (latest_py, latest_c, cibw, manylinux_x86_64_image, str(changed).lower())
           )
 
-      - name: Create Pull Request
-        id: cpr
-        if: steps.update.outputs.changed == 'true'
-        continue-on-error: true
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.UPDATE_VERSIONS_TOKEN || github.token }}
-          add-paths: .github/.env
-          base: ${{ github.event.repository.default_branch }}
-          branch: chore/update-versions
-          commit-message: "chore: update .env — py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
-          title: "chore: update .env — ta-lib py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
-          body: |
-            ## 自动版本更新
-
-            该 PR 由 `.github/workflows/update-versions.yml` 自动生成，更新 `.github/.env`。
-
-            | 变量 | 新值 | 数据来源 |
-            |------|------|---------|
-            | `TALIB_PY_VER` | `${{ steps.update.outputs.py_ver }}` | https://pypi.org/project/ta-lib/ |
-            | `TALIB_C_VER`  | `${{ steps.update.outputs.c_ver }}` | https://github.com/ta-lib/ta-lib/releases |
-            | `CIBW_BUILD`   | `${{ steps.update.outputs.cibw_build }}` | https://endoflife.date/python |
-            | `CIBW_MANYLINUX_X86_64_IMAGE` | `${{ steps.update.outputs.manylinux_x86_64_image }}` | https://github.com/pypa/manylinux |
-
-            合并后 `talib.yml` 的 push 触发器（监控 `.github/.env`）自动执行 wheel 重建与发布。
-          labels: version-update
-          delete-branch: true
-
-      - name: Validate PR creation
-        if: steps.update.outputs.changed == 'true' && steps.cpr.outcome == 'failure'
+      - name: Commit and push .env
+        id: commit
         shell: bash
+        env:
+          CHANGED: ${{ steps.update.outputs.changed }}
+          MSG: "chore: update .env — py=${{ steps.update.outputs.py_ver }}, c=${{ steps.update.outputs.c_ver }}, cibw=${{ steps.update.outputs.cibw_build }}, manylinux=${{ steps.update.outputs.manylinux_x86_64_image }}"
         run: |
-          echo "::error::create-pull-request failed. By default this workflow uses GITHUB_TOKEN. Enable 'Allow GitHub Actions to create and approve pull requests' in Settings > Actions > General, or configure UPDATE_VERSIONS_TOKEN as an optional PAT / GitHub App override with contents:write and pull-requests:write permissions."
-          exit 1
+          if [ "$CHANGED" = "true" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/.env
+            git commit -m "$MSG"
+            git push origin HEAD
+          fi
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Show PR result
-        if: steps.update.outputs.changed == 'true' && steps.cpr.outputs.pull-request-url != ''
-        run: |
-          echo "PR: ${{ steps.cpr.outputs.pull-request-url }}"
+  build-talib:
+    needs: update-versions
+    if: needs.update-versions.outputs.changed == 'true' || inputs.force_build
+    uses: ./.github/workflows/talib.yml
+    with:
+      ref: ${{ needs.update-versions.outputs.sha }}
+    secrets: inherit
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
